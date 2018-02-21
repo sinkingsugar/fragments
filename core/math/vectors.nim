@@ -6,45 +6,41 @@ type
   Wide*[T] = object
     elements*: array[4, T]
 
-#   SuperScalar* = concept v, type V
-#     type S = V.scalarType
-#     v.getLane(int) is S
-#     v.setLane(int, S)
+  SuperScalar* = concept v, type V
+    type T = V.scalarType
+    const width: int = V.laneCount
+    v.getLane(int) is T
+    v.setLane(int, T)
 
-# template scalarType*[T](t: typedesc[Wide[T]]): typedesc = T
-# func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
-# func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
+template scalarType*[T](t: typedesc[Wide[T]]): typedesc = T
+template laneCount*[T](t: typedesc[Wide[T]]): int = 4
+func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
+func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
 
-# func gather*(wide: var SuperScalar; args: varargs[SuperScalar.scalarType]) =
-#   for laneIndex, value in pairs(args):
-#     wide.setLane(laneIndex, value)
+func gather*(wide: var SuperScalar; args: varargs[SuperScalar.T]) =
+  for laneIndex, value in pairs(args):
+    wide.setLane(laneIndex, value)
 
-# func scatter*(wide: SuperScalar; args: varargs[var SuperScalar.scalarType]) =
-#   for laneIndex, value in pairs(args):
-#     value = wide.getLane(laneIndex)
+func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
+  # var varargs is not supported
+  for laneIndex, value in mpairs(args):
+    value = wide.getLane(laneIndex)
 
-proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
-  
-  # echo T.typeKind
-  # echo T.getType.typeKind
-  # echo astGenRepr(T)
-  # echo astGenRepr(T.getType)
-  # echo astGenRepr(T.getTypeInst[1])
-  # echo astGenRepr(T.getTypeInst[1].getType)
+# iterator lanes*(wide: SuperScalar): SuperScalar.T =
+#   for laneIndex in SuperScalar.width:
+#     yield getLane(laneIndex)
 
-  # T.getType().typeKind == ntyTypeDesc
-  #var t = T.getTypeInst[1].getType
-  
+proc makeWideTypeRecursive(T: NimNode, generatedTypes: var seq[NimNode]): NimNode {.compileTime.} =
+   
   case T.typeKind:
     of ntyTypeDesc:
-      return makeWideTypeImpl(T.getTypeInst[1])
+      return makeWideTypeRecursive(T.getTypeInst[1], generatedTypes)
       
     of ntyArray:
       # Array types are a bracket expression of 'array', a range, and the element type
       var wideType = T.getTypeInst.copyNimTree()     
       var elementType = wideType[2]
-      #wideType[2] = nnkBracketExpr.newTree(bindSym"Wide", elementType)
-      wideType[2] = makeWideTypeImpl(elementType)
+      wideType[2] = makeWideTypeRecursive(elementType, generatedTypes)
       return wideType
 
     of ntyObject:
@@ -69,7 +65,7 @@ proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
 
             # Vectorize the field type
             let fieldType = fieldDefs[^2]
-            let newFieldType = makeWideTypeImpl(fieldType)
+            let newFieldType = makeWideTypeRecursive(fieldType, generatedTypes)
             newFieldDefs.add(newFieldType)
 
             newFieldDefs.add(newEmptyNode())
@@ -89,69 +85,46 @@ proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
               recList
             )
           )
+          generatedTypes.add(wideTypeDefinition)
 
-          return newStmtList(
-            nnkTypeSection.newTree(
-              wideTypeDefinition
-            ),
-            symbol
-          )
+          return symbol
+
         else: discard
+   
+    else:
+      let name = ident($T)
+      return quote do:
+        Wide[`name`]
+        #Wide[`T`]
+        #array[4, `T`]
 
-    of ntyFloat:
-      return quote do: Wide[float]
-    of ntyFloat32:
-      return quote do: Wide[float32]
-    of ntyFloat64:
-      return quote do: Wide[float64]
-    of ntyFloat128:
-      return quote do: Wide[float128]      
+proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
+  var types = newSeq[NimNode]()
+  let rootType = makeWideTypeRecursive(T, types)
 
-    of ntyBool:
-      return quote do: Wide[bool]
-    of ntyChar:
-      return quote do: Wide[char]
+  return newStmtList(
+    nnkTypeSection.newTree(
+      types
+    ),
+    rootType
+  )
 
-    of ntyInt:
-      return quote do: Wide[int]
-    of ntyInt8:
-      return quote do: Wide[int8]
-    of ntyInt16:
-      return quote do: Wide[int16]
-    of ntyInt32:
-      return quote do: Wide[int32]
-    of ntyInt64:
-      return quote do: Wide[int64]
-
-    of ntyUInt:
-      return quote do: Wide[uint]
-    of ntyUInt8:
-      return quote do: Wide[uint8]
-    of ntyUInt16:
-      return quote do: Wide[uint16]
-    of ntyUInt32:
-      return quote do: Wide[uint32]
-    of ntyUInt64:
-      return quote do: Wide[uint64]
-
-    else: error("Can't vectorize type " & $T)
-      # return nnkBracketExpr.newTree(ident"Wide", T)
-      # return quote do:
-      #   array[4, `T`]
-      #   Wide[`T`]
-
-macro makeWideType(T: typed): untyped =
-  result = makeWideTypeImpl(T)
-  #echo astGenRepr(result)
+# macro makeWideType(T: typed): untyped =
+#   result = makeWideTypeImpl2(T)
+#   #echo astGenRepr(result)
   
 macro wide*(T: typedesc): untyped =
-  makeWideTypeImpl(T.getType)
+  T.getType().makeWideTypeImpl()
 
-when isMainModule:
-  # var f1, f2, f3: float
-  # var w: Wide[float]
-  # w.gather(f1, f2, f3)
-  # w.scatter(f3, f2, f1)
+static:
+  var f1, f2, f3: float
+  var fa: array[Wide[float].laneCount, float]
+  f1 = 1.0
+  var w: Wide[float]
+  w.gather(f3, f2, f1)
+  w.scatter(fa)
+  echo fa[2]
+  #for x in w.lanes: discard
 
   type
     Bar = object
@@ -166,6 +139,8 @@ when isMainModule:
 
   echo (wide float).name
   echo (wide array[4, float]).name
+  type WideFoo = wide Foo
+  echo type(WideFoo.fvalue).name
 
   # type WideFoo = makeWideType(Foo)
   # var f: WideFoo
