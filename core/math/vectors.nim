@@ -12,11 +12,23 @@ type
     v.getLane(int) is T
     v.setLane(int, T)
 
+# Vectorized version of primitive types
 template scalarType*[T](t: typedesc[Wide[T]]): typedesc = T
 template laneCount*[T](t: typedesc[Wide[T]]): int = 4
 func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
 func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
 
+# Vectorized version of arrays
+template scalarType*[size: static[int]](t: typedesc[array[size, SuperScalar]]): typedesc = array[size, SuperScalar.T]
+template laneCount*[size: static[int]](t: typedesc[array[size, SuperScalar]]): int = SuperScalar.width
+func getLane*[size: static[int]; S: SuperScalar](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
+  for i in 0..<size:
+    result[i] = wide[i].getLane(laneIndex)
+func setLane*[size: static[int]; S: SuperScalar](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
+  for i in 0..<size:
+    wide[i].setLane(laneIndex, value[i])
+
+# Common operations on vectorized types
 func gather*(wide: var SuperScalar; args: varargs[SuperScalar.T]) =
   for laneIndex, value in pairs(args):
     wide.setLane(laneIndex, value)
@@ -30,8 +42,7 @@ func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
 #   for laneIndex in SuperScalar.width:
 #     yield getLane(laneIndex)
 
-type VectorizedType = tuple[scalar, wide: NimNode]
-var vectorizedTypes {.compileTime.} = newSeq[VectorizedType]()
+var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar, wide: NimNode]]()
 
 proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNode {.compileTime.} =
   
@@ -83,6 +94,7 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
 
           # Create a new symbol for the type
           var symbol = genSym(nskType)
+          vectorizedTypes.add((T, symbol))
 
           var wideTypeDefinition = nnkTypeDef.newTree(
             symbol,
@@ -95,7 +107,6 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
           )
           generatedTypes.add(wideTypeDefinition)
           
-          vectorizedTypes.add((T, symbol))
           return symbol
 
         else: discard
@@ -126,6 +137,7 @@ macro wide*(T: typedesc): untyped =
   T.getType().makeWideTypeImpl()
 
 static:
+  # Test super scalar concept
   var f1, f2, f3: float
   var fa: array[Wide[float].laneCount, float]
   f1 = 1.0
@@ -135,6 +147,15 @@ static:
   echo fa[2]
   #for x in w.lanes: discard
 
+  # Test primitive type vectorization
+  echo (wide float).name
+
+  # Test array vectorization and concept
+  var a: wide array[4, float]
+  echo type(a).name
+  echo a.getLane(0)
+
+  # Test complex type vectorization
   type
     Bar = object
       value*: uint64
@@ -146,12 +167,11 @@ static:
       #sValue*: string
       rValue*: Bar
 
-  echo (wide float).name
-  echo (wide array[4, float]).name
   type WideBar = wide Bar
   type WideFoo = wide Foo
   echo type(WideFoo.fvalue).name
 
+  # Test type reuse
   var x: WideFoo
   var y: WideBar
   x.rValue = y
