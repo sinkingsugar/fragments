@@ -30,8 +30,11 @@ func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
 #   for laneIndex in SuperScalar.width:
 #     yield getLane(laneIndex)
 
-proc makeWideTypeRecursive(T: NimNode, generatedTypes: var seq[NimNode]): NimNode {.compileTime.} =
-   
+type VectorizedType = tuple[scalar, wide: NimNode]
+var vectorizedTypes {.compileTime.} = newSeq[VectorizedType]()
+
+proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNode {.compileTime.} =
+  
   case T.typeKind:
     of ntyTypeDesc:
       return makeWideTypeRecursive(T.getTypeInst[1], generatedTypes)
@@ -46,6 +49,11 @@ proc makeWideTypeRecursive(T: NimNode, generatedTypes: var seq[NimNode]): NimNod
     of ntyObject:
       case T.kind:
         of nnkSym:
+          for vectorizedType in vectorizedTypes:
+            if T.sameType(vectorizedType.scalar):
+            #if T == vectorizedType.scalar:
+              return vectorizedType.wide
+
           let scalarTypeDefinition = T.symbol.getImpl()
 
           var recList = nnkRecList.newNimNode()
@@ -86,7 +94,8 @@ proc makeWideTypeRecursive(T: NimNode, generatedTypes: var seq[NimNode]): NimNod
             )
           )
           generatedTypes.add(wideTypeDefinition)
-
+          
+          vectorizedTypes.add((T, symbol))
           return symbol
 
         else: discard
@@ -99,12 +108,12 @@ proc makeWideTypeRecursive(T: NimNode, generatedTypes: var seq[NimNode]): NimNod
         #array[4, `T`]
 
 proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
-  var types = newSeq[NimNode]()
-  let rootType = makeWideTypeRecursive(T, types)
+  var generatedTypes = newSeq[NimNode]()
+  let rootType = makeWideTypeRecursive(T, generatedTypes)
 
   return newStmtList(
     nnkTypeSection.newTree(
-      types
+      generatedTypes
     ),
     rootType
   )
@@ -139,11 +148,10 @@ static:
 
   echo (wide float).name
   echo (wide array[4, float]).name
+  type WideBar = wide Bar
   type WideFoo = wide Foo
   echo type(WideFoo.fvalue).name
 
-  # type WideFoo = makeWideType(Foo)
-  # var f: WideFoo
-  # echo type(bar.fvalue).name
-
-  # echo f.value
+  var x: WideFoo
+  var y: WideBar
+  x.rValue = y
