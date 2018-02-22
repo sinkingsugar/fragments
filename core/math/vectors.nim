@@ -44,17 +44,17 @@ func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
 
 var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar, wide: NimNode]]()
 
-proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNode {.compileTime.} =
+proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[NimNode]): NimNode {.compileTime.} =
   
   case T.typeKind:
     of ntyTypeDesc:
-      return makeWideTypeRecursive(T.getTypeInst[1], generatedTypes)
+      return makeWideTypeRecursive(T.getTypeInst[1], generatedTypes, generatedProcs)
       
     of ntyArray:
       # Array types are a bracket expression of 'array', a range, and the element type
       var wideType = T.getTypeInst.copyNimTree()     
       var elementType = wideType[2]
-      wideType[2] = makeWideTypeRecursive(elementType, generatedTypes)
+      wideType[2] = makeWideTypeRecursive(elementType, generatedTypes, generatedProcs)
       return wideType
 
     of ntyObject:
@@ -65,12 +65,18 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
             #if T == vectorizedType.scalar:
               return vectorizedType.wide
 
+          var
+            recList = nnkRecList.newTree(newEmptyNode(), newEmptyNode())
+            getters = newStmtList()
+            setters = newStmtList()
+            selfSym = ident("self")
+            laneIndexSym = ident("laneIndex")
+            resultSym = ident("result")
+            valueSym = ident("value")
+
           let scalarTypeDefinition = T.symbol.getImpl()
 
-          var recList = nnkRecList.newNimNode()
-          recList.add(newEmptyNode())
-          recList.add(newEmptyNode())
-
+          # Iterate field declarations of the scalar type
           for fieldDefs in scalarTypeDefinition[2][2]:
             fieldDefs.expectKind(nnkIdentDefs)
             fieldDefs.expectMinLen(2)
@@ -78,13 +84,26 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
             # Copy over all identifiers, including visibility and pragmas
             var newFieldDefs = nnkIdentDefs.newNimNode()
             for i in 0 ..< fieldDefs.len - 2:
+
+              # Create a copy of each field declaration
               let fieldDef = fieldDefs[i]
               fieldDef.expectKind({nnkIdent, nnkPragmaExpr, nnkPostfix})
               newFieldDefs.add(fieldDef.copyNimTree())
 
+              # Get the field identifier
+              var fieldIdent = fieldDef
+              if fieldIdent.kind == nnkPragmaExpr:
+                fieldIdent = fieldIdent[0]
+              if fieldIdent.kind == nnkPostfix:
+                fieldIdent = fieldIdent[1]
+
+              # Generate a lane getter and setter for each field
+              getters.add(quote do: `resultSym`.`fieldIdent` = `selfSym`.`fieldIdent`.getLane(`laneIndexSym`))
+              setters.add(quote do: `selfSym`.`fieldIdent`.setLane(`laneIndexSym`, `valueSym`.`fieldIdent`))
+
             # Vectorize the field type
             let fieldType = fieldDefs[^2]
-            let newFieldType = makeWideTypeRecursive(fieldType, generatedTypes)
+            let newFieldType = makeWideTypeRecursive(fieldType, generatedTypes, generatedProcs)
             newFieldDefs.add(newFieldType)
 
             newFieldDefs.add(newEmptyNode())
@@ -92,11 +111,21 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
             # Add to the record
             recList.add(newFieldDefs)
 
-          # Create a new symbol for the type
+          # Create a new symbol for the type and add it to the list
+          # of known vectorized types
           var symbol = genSym(nskType)
           vectorizedTypes.add((T, symbol))
 
-          var wideTypeDefinition = nnkTypeDef.newTree(
+          # Satisfy the SuperScalar concept and generate lane accessors
+          generatedProcs.add(quote do:
+            template scalarType*(t: typedesc[`symbol`]): typedesc = `T`
+            template laneCount*(t: typedesc[`symbol`]): int = 4
+            func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `T` {.inline.} = `getters`
+            func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `T`) {.inline.} = `setters`
+          )
+
+          # Create the definition of the vectorized type
+          generatedTypes.add(nnkTypeDef.newTree(
             symbol,
             newEmptyNode(),
             nnkObjectTy.newTree(
@@ -104,8 +133,7 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
               newEmptyNode(),
               recList
             )
-          )
-          generatedTypes.add(wideTypeDefinition)
+          ))
           
           return symbol
 
@@ -120,19 +148,13 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes: var seq[NimNode]): NimNod
 
 proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
   var generatedTypes = newSeq[NimNode]()
-  let rootType = makeWideTypeRecursive(T, generatedTypes)
+  var generatedProcs = newSeq[NimNode]()
+  let rootType = makeWideTypeRecursive(T, generatedTypes, generatedProcs)
 
-  return newStmtList(
-    nnkTypeSection.newTree(
-      generatedTypes
-    ),
-    rootType
-  )
+  result = newStmtList(nnkTypeSection.newTree(generatedTypes))
+  result.add(generatedProcs)
+  result.add(rootType)
 
-# macro makeWideType(T: typed): untyped =
-#   result = makeWideTypeImpl2(T)
-#   #echo astGenRepr(result)
-  
 macro wide*(T: typedesc): untyped =
   T.getType().makeWideTypeImpl()
 
@@ -167,11 +189,18 @@ static:
       #sValue*: string
       rValue*: Bar
 
-  type WideBar = wide Bar
-  type WideFoo = wide Foo
+    WideBar = wide Bar
+
+    WideFoo = wide Foo
+
   echo type(WideFoo.fvalue).name
 
   # Test type reuse
   var x: WideFoo
   var y: WideBar
   x.rValue = y
+
+  echo WideBar.laneCount
+  echo WideFoo.scalarType.name
+  x.setLane(0, Foo())
+  discard x.getLane(0)
