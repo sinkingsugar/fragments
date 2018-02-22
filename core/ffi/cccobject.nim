@@ -44,12 +44,13 @@ proc validCCCName(name: string): bool =
     if chr notin {'A'..'Z','a'..'z','_','$','0'..'9'}:
       return false
 
-{.emit:["""/*TYPESECTION*/
-#ifdef __cplusplus
-template<typename T>
-static inline void callCCCPtrDestructor(T* instance) { instance->~T(); }
-#endif
-  """].}
+when not defined(js):
+  {.emit:["""/*TYPESECTION*/
+  #ifdef __cplusplus
+  template<typename T>
+  static inline void callCCCPtrDestructor(T* instance) { instance->~T(); }
+  #endif
+    """].}
 
 macro defineCCCType*(name: untyped, importCppStr: string, headerStr: string = nil): untyped =
   result = nnkStmtList.newTree()
@@ -247,12 +248,19 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
   
   else:
     if validCCCName($field):
-      importString = "#." & $field & "(@)"
+      when defined(js):
+        importString = "#." & "_" & $field & "(@)"
+      else:
+        importString = "#." & $field & "(@)"
+
 
     else:
-      if not mangledNames.hasKey($field):
-        mangledNames[$field] = $mangleCCCName($field)
-      importString = "#." & mangledNames[$field] & "(@)"
+      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCCCName($field)
+      when defined(js):
+        importString = "#." & "_" & mangledNames[$field] & "(@)"
+      else:
+        importString = "#." & mangledNames[$field] & "(@)"
+
 
     result = quote:
       proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym, discardable.}
@@ -313,5 +321,10 @@ when isMainModule:
 
       var x1 = cppinit(MyClass2, 1)
       echo $x1.test20(1).to(cint)
+
+      var c1 = x1.class1.to(MyClass)
+      c1.test3()
+      x1.class1.to(MyClass).test3()
+      # TODO check macros -> callsite macro
     
     run()

@@ -59,6 +59,7 @@ public:
   }
 
   int number = 78;
+  MyClass class1;
 };
 
 int globalNumber = 101;
