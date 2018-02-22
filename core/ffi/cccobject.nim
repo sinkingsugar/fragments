@@ -323,8 +323,8 @@ when isMainModule:
       echo $x1.test20(1).to(cint)
 
       var c1 = x1.class1.to(MyClass)
-      c1.test3()
-      x1.class1.to(MyClass).test3()
+      c1.test3().to(void)
+      x1.class1.to(MyClass).test3().to(void)
       # TODO check macros -> callsite macro
     
     run()
