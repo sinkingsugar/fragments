@@ -1,14 +1,14 @@
 import asyncjs, deques
 
 type
-  AsyncSemaphore = ref object
+  AsyncSemaphore* = ref object
     resolvers: Deque[proc()]
     currentCount: int
 
-  AsyncLock = ref object
+  AsyncLock* = ref object
     semaphore: AsyncSemaphore
 
-proc newAsyncSemaphore(initialCount: int = 0): AsyncSemaphore =
+proc newAsyncSemaphore*(initialCount: int = 0): AsyncSemaphore =
   new(result)
   result.resolvers = initDeque[proc()]()
   result.currentCount = initialCount
@@ -31,7 +31,7 @@ proc signal*(self: AsyncSemaphore) =
   if resolver != nil:
     resolver()
   
-proc newAsyncLock(initialCount: int = 0): AsyncLock =
+proc newAsyncLock*(initialCount: int = 0): AsyncLock =
   new(result)
   result.semaphore = newAsyncSemaphore(1)
 
@@ -41,7 +41,7 @@ proc lock*(self: AsyncLock): Future[void] {.async, inline.} =
 proc release*(self: AsyncLock) {.inline.} = 
   self.semaphore.signal()
 
-template withLock(self: AsyncLock; body: untyped): untyped =
+template withLock*(self: AsyncLock; body: untyped): untyped =
   await self.lock()
   # try:
   #   body
