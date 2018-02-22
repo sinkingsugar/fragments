@@ -1,7 +1,5 @@
 import macros, strutils, typetraits, tables
 
-#var types {.compileTime.} = newTable[NimNode, NimSym]()
-
 type
   Wide*[T] = object
     elements*: array[4, T]
@@ -38,9 +36,9 @@ func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
   for laneIndex, value in mpairs(args):
     value = wide.getLane(laneIndex)
 
-# iterator lanes*(wide: SuperScalar): SuperScalar.T =
-#   for laneIndex in SuperScalar.width:
-#     yield getLane(laneIndex)
+iterator lanes(wide: SuperScalar): SuperScalar.T =
+  for laneIndex in 0..<SuperScalar.width:
+    yield wide.getLane(laneIndex)
 
 var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar, wide: NimNode]]()
 
@@ -167,7 +165,7 @@ static:
   w.gather(f3, f2, f1)
   w.scatter(fa)
   echo fa[2]
-  #for x in w.lanes: discard
+  for x in w.lanes: discard
 
   # Test primitive type vectorization
   echo (wide float).name
