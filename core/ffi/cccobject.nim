@@ -145,16 +145,28 @@ proc `[]`*(obj: CCCConcept, field: auto): CCCObject {.importcpp:getImpl.}
 proc `[]=`*[T](obj: CCCConcept, field: auto, val: T) {.importcpp:setImpl.}
   ## Set the value of a property of name `field` in a JsObject `obj` to `v`.
 
-# Conversion to and from CCCObject
-proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
-  ## Converts a CCCObject `x` to type `T`.
+when defined(js):
+  # Conversion to and from CCCObject
+  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
 
-# Conversion to and from CCCObject
-proc to*[T](x: CCCObject): T {. importcpp: "('0)(#)" .}
-  ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CCCObject
+  proc to*[T](x: CCCObject): T {. importcpp: "(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
 
-proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
-  ## Converts a value of any type to type CCCObject
+  proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
+    ## Converts a value of any type to type CCCObject
+else:
+  # Conversion to and from CCCObject
+  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
+
+  # Conversion to and from CCCObject
+  proc to*[T](x: CCCObject): T {. importcpp: "('0)(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
+
+  proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
+    ## Converts a value of any type to type CCCObject
 
 template toCCC*(s: string): CCCObject = cstring(s).toCCC
 
