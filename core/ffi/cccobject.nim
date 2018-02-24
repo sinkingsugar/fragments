@@ -145,13 +145,22 @@ proc `[]`*(obj: CCCConcept, field: auto): CCCObject {.importcpp:getImpl.}
 proc `[]=`*[T](obj: CCCConcept, field: auto, val: T) {.importcpp:setImpl.}
   ## Set the value of a property of name `field` in a JsObject `obj` to `v`.
 
-# Conversion to and from CCCObject
-proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
-  ## Converts a CCCObject `x` to type `T`.
+when defined(js):
+  # Conversion to and from CCCObject
+  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
 
-# Conversion to and from CCCObject
-proc to*[T](x: CCCObject): T {. importcpp: "('0)(#)" .}
-  ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CCCObject
+  proc to*[T](x: CCCObject): T {. importcpp: "(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
+else:
+  # Conversion to and from CCCObject
+  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
+
+  # Conversion to and from CCCObject
+  proc to*[T](x: CCCObject): T {. importcpp: "('0)(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
 
 proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
   ## Converts a value of any type to type CCCObject
@@ -186,7 +195,6 @@ macro `.`*(obj: CCCConcept, field: untyped): CCCObject =
       result = quote do:
         proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym.}
         helper(`obj`)
-  
   else:
     if not mangledNames.hasKey($field):
       mangledNames[$field] = $mangleCCCName($field)
@@ -211,7 +219,6 @@ macro `.=`*(obj: CCCConcept, field, value: untyped): untyped =
       result = quote do:
         proc helper(o: CCCConcept, v: auto) {.importcpp:`importString`, gensym.}
         helper(`obj`, `value`)
-
   else:
     if not mangledNames.hasKey($field):
       mangledNames[$field] = $mangleCCCName($field)
@@ -245,22 +252,18 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
     result = quote:
       proc helper(): CCCObject {.importcpp:`importString`, gensym, discardable.}
       helper()
-  
   else:
     if validCCCName($field):
       when defined(js):
         importString = "#." & "_" & $field & "(@)"
       else:
         importString = "#." & $field & "(@)"
-
-
     else:
       if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCCCName($field)
       when defined(js):
         importString = "#." & "_" & mangledNames[$field] & "(@)"
       else:
         importString = "#." & mangledNames[$field] & "(@)"
-
 
     result = quote:
       proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym, discardable.}
@@ -270,6 +273,20 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
     let paramName = newIdentNode(("param" & $idx).toNimIdent)
     result[0][3].add newIdentDefs(paramName, newIdentNode("CCCObject".toNimIdent))
     result[1].add args[idx].copyNimTree
+    
+# iterator utils
+type CppIterator* {.importcpp: "'0::iterator".} [T] = object
+proc itBegin [T] (cset: T): CppIterator[T] {.importcpp:"(#.begin())".}
+proc itEnd [T] (cset: T): CppIterator[T] {.importcpp:"(#.end())".}
+proc itPlusPlus [T] (csetIt: var CppIterator[T]): CppIterator[T] {.importcpp:"(++#)".}
+proc itValue [T, R] (csetIt: var CppIterator[T]): R {.importcpp:"(*#)".}
+proc itEqual [T] (csetIt: var CppIterator[T], csetIt2: var CppIterator[T]): bool {.importcpp:"(operator==(#, #))".}
+iterator cppItems*[T, R](cset: var T): R =
+  var it = cset.itBegin()
+  var itend =  cset.itEnd()
+  while not itEqual(it, itend):
+    yield itValue[T, R](it)
+    it = it.itPlusPlus
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
