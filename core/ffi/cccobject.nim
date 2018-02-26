@@ -68,7 +68,9 @@ macro defineCCCType*(name: untyped, importCppStr: string, headerStr: string = ni
     # replace empty string with proper values
     result[0][0][0][1][0][1] = newStrLitNode($importCppStr)
 
+  var converterName = newIdentNode("to" & $name)
   result.add quote do:
+    converter `converterName`(co: CCCObject): `name` {.used, importcpp:"(#)".}
     proc isCCCConcept*(T: typedesc[`name`]): bool = true
 
 # constructor call
@@ -166,6 +168,8 @@ proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
   ## Converts a value of any type to type CCCObject
 
 template toCCC*(s: string): CCCObject = cstring(s).toCCC
+
+converter toInt(co: CCCObject): int {.used, importcpp:"(int)(#)".}
 
 macro cccFromAst*(n: untyped): untyped =
   result = n
@@ -328,6 +332,7 @@ when isMainModule:
       y.number = 80
       y.numbers[0] = 23
       var n = (x.number + y.number + y.numbers[0]).to(cint)
+      var nInt: int = x.number + y.number + y.numbers[0]
       echo $n
       echo $x.test(1).to(cdouble)
       echo $x.test(x.test2(2)).to(cdouble)
@@ -341,7 +346,7 @@ when isMainModule:
 
       var c1 = x1.class1.to(MyClass)
       c1.test3().to(void)
-      # x1.class1.to(MyClass).test3().to(void)
+      x1.class1.test3().to(void)
       # TODO check macros -> callsite macro
     
     run()
