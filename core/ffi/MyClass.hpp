@@ -59,7 +59,9 @@ public:
   }
 
   int number = 78;
+  double myDouble = 7.7;
   MyClass class1;
+  const char* myCstring;
 };
 
 int globalNumber = 101;
