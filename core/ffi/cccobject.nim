@@ -169,7 +169,24 @@ proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
 
 template toCCC*(s: string): CCCObject = cstring(s).toCCC
 
-converter toInt(co: CCCObject): int {.used, importcpp:"(int)(#)".}
+converter toByte(co: CCCObject): int8 {.used, importcpp:"(#)".}
+converter toUByte(co: CCCObject): uint8 {.used, importcpp:"(#)".}
+
+converter toShort(co: CCCObject): int16 {.used, importcpp:"(#)".}
+converter toUShort(co: CCCObject): uint16 {.used, importcpp:"(#)".}
+
+converter toInt(co: CCCObject): int {.used, importcpp:"(#)".}
+converter toUInt(co: CCCObject): uint {.used, importcpp:"(#)".}
+
+converter toLong(co: CCCObject): int64 {.used, importcpp:"(#)".}
+converter toULong(co: CCCObject): uint64 {.used, importcpp:"(#)".}
+
+converter toFloat(co: CCCObject): float {.used, importcpp:"(#)".}
+converter toFloat32(co: CCCObject): float32 {.used, importcpp:"(#)".}
+
+converter toDouble(co: CCCObject): float64 {.used, importcpp:"(#)".}
+
+converter toCString(co: CCCObject): cstring {.used, importcpp:"(#)".}
 
 macro cccFromAst*(n: untyped): untyped =
   result = n
@@ -217,19 +234,19 @@ macro `.=`*(obj: CCCConcept, field, value: untyped): untyped =
       let importString = $field & " = #"
       result = quote do:
         proc helper(v: auto) {.importcpp:`importString`, gensym.}
-        helper(`value`)
+        helper(`value`.toCCC)
     else:
       let importString = "#." & $field & " = #"
       result = quote do:
         proc helper(o: CCCConcept, v: auto) {.importcpp:`importString`, gensym.}
-        helper(`obj`, `value`)
+        helper(`obj`, `value`.toCCC)
   else:
     if not mangledNames.hasKey($field):
       mangledNames[$field] = $mangleCCCName($field)
     let importString = "#." & mangledNames[$field] & " = #"
     result = quote do:
       proc helper(o: CCCConcept, v: auto) {. importcpp: `importString`, gensym .}
-      helper(`obj`, `value`)
+      helper(`obj`, `value`.toCCC)
 
 macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAst]): CCCObject =
   # Experimental "method call" operator for type CCCObject.
@@ -333,6 +350,7 @@ when isMainModule:
       y.numbers[0] = 23
       var n = (x.number + y.number + y.numbers[0]).to(cint)
       var nInt: int = x.number + y.number + y.numbers[0]
+      echo $nInt
       echo $n
       echo $x.test(1).to(cdouble)
       echo $x.test(x.test2(2)).to(cdouble)
@@ -347,6 +365,11 @@ when isMainModule:
       var c1 = x1.class1.to(MyClass)
       c1.test3().to(void)
       x1.class1.test3().to(void)
+      var myFloat: float32 = x1.myDouble
+      echo $myFloat
+      var myStr = "Hello Mars"
+      x1.myCstring = myStr
+      echo $x1.myCstring.to(cstring)
       # TODO check macros -> callsite macro
     
     run()
