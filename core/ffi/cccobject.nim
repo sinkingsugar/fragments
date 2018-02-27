@@ -7,6 +7,9 @@ type
   CCCConcept* = concept type T
     T.isCCCConcept
 
+when defined(js):
+  type WasmPtr* = distinct int
+
 var
   mangledNames {. compileTime .} = initTable[string, string]()
   nameCounter {. compileTime .} = 0
@@ -157,6 +160,10 @@ when defined(js):
     ## Converts a CCCObject `x` to type `T`.
 else:
   # Conversion to and from CCCObject
+  proc to*(x: CCCObject, T: typedesc[void]): T {. importcpp: "(#)" .}
+    ## Converts a CCCObject `x` to type `T`.
+
+  # Conversion to and from CCCObject
   proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
     ## Converts a CCCObject `x` to type `T`.
 
@@ -169,24 +176,27 @@ proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
 
 template toCCC*(s: string): CCCObject = cstring(s).toCCC
 
-converter toByte(co: CCCObject): int8 {.used, importcpp:"(#)".}
-converter toUByte(co: CCCObject): uint8 {.used, importcpp:"(#)".}
+converter toByte*(co: CCCObject): int8 {.used, importcpp:"(#)".}
+converter toUByte*(co: CCCObject): uint8 {.used, importcpp:"(#)".}
 
-converter toShort(co: CCCObject): int16 {.used, importcpp:"(#)".}
-converter toUShort(co: CCCObject): uint16 {.used, importcpp:"(#)".}
+converter toShort*(co: CCCObject): int16 {.used, importcpp:"(#)".}
+converter toUShort*(co: CCCObject): uint16 {.used, importcpp:"(#)".}
 
-converter toInt(co: CCCObject): int {.used, importcpp:"(#)".}
-converter toUInt(co: CCCObject): uint {.used, importcpp:"(#)".}
+converter toInt*(co: CCCObject): int {.used, importcpp:"(#)".}
+converter toUInt*(co: CCCObject): uint {.used, importcpp:"(#)".}
 
-converter toLong(co: CCCObject): int64 {.used, importcpp:"(#)".}
-converter toULong(co: CCCObject): uint64 {.used, importcpp:"(#)".}
+converter toLong*(co: CCCObject): int64 {.used, importcpp:"(#)".}
+converter toULong*(co: CCCObject): uint64 {.used, importcpp:"(#)".}
 
-converter toFloat(co: CCCObject): float {.used, importcpp:"(#)".}
-converter toFloat32(co: CCCObject): float32 {.used, importcpp:"(#)".}
+converter toFloat*(co: CCCObject): float {.used, importcpp:"(#)".}
+converter toFloat32*(co: CCCObject): float32 {.used, importcpp:"(#)".}
 
-converter toDouble(co: CCCObject): float64 {.used, importcpp:"(#)".}
+converter toDouble*(co: CCCObject): float64 {.used, importcpp:"(#)".}
 
-converter toCString(co: CCCObject): cstring {.used, importcpp:"(#)".}
+converter toCString*(co: CCCObject): cstring {.used, importcpp:"(#)".}
+
+when defined(js):
+  converter toWasmPtr*(co: CCCObject): WasmPtr {.used, importcpp:"(#)".}
 
 macro cccFromAst*(n: untyped): untyped =
   result = n
@@ -264,14 +274,13 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
   #  let res = console.log("I return undefined!")
   #  console.log(res) # This prints undefined, as console.log always returns
   #                   # undefined. Thus one has to be careful, when using
-  #                   # CCCObject calls.
-  
+  #                   # CCCObject calls. 
   var importString: string
   if obj.len == 0 and $obj == CCCGlobalName:
     importString = $field & "(@)"
     
     result = quote:
-      proc helper(): CCCObject {.importcpp:`importString`, gensym, discardable.}
+      proc helper(): CCCObject {.importcpp:`importString`, gensym.}
       helper()
   else:
     if validCCCName($field):
@@ -287,7 +296,7 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
         importString = "#." & mangledNames[$field] & "(@)"
 
     result = quote:
-      proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym, discardable.}
+      proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym.}
       helper(`obj`)
   
   for idx in 0 ..< args.len:
