@@ -3,9 +3,9 @@
 import macros, tables
 
 type
-  CCCObject* {.nodecl.} = object
-  CCCConcept* = concept type T
-    T.isCCCConcept
+  CppProxy* {.nodecl.} = object
+  CppObject* = concept type T
+    T.isCppObject
 
 when defined(js):
   type WasmPtr* = distinct int
@@ -14,21 +14,20 @@ var
   mangledNames {. compileTime .} = initTable[string, string]()
   nameCounter {. compileTime .} = 0
 
-# var nullptr* {.nodecl, importcpp:"(nullptr)".}: object
-type CCCGlobalType* = object
-proc isCCCConcept*(T: typedesc[CCCGlobalType]): bool = true
-var global* {.nodecl.}: CCCGlobalType
-const CCCGlobalName = "global"
+type CppGlobalType* = object
+proc isCppObject*(T: typedesc[CppGlobalType]): bool = true
+var global* {.nodecl.}: CppGlobalType
+const CppGlobalName = "global"
 
 const
   setImpl = "#[#] = #"
   getImpl = "#[#]"
 
-template mangleCCCName(name: string): string =
+template mangleCppName(name: string): string =
   inc nameCounter
   "mangledName" & $nameCounter
 
-proc validCCCName(name: string): bool =
+proc validCppName(name: string): bool =
   result = true
   const reservedWords = ["break", "case", "catch", "class", "const", "continue",
     "debugger", "default", "delete", "do", "else", "export", "extends",
@@ -51,11 +50,11 @@ when not defined(js):
   {.emit:["""/*TYPESECTION*/
   #ifdef __cplusplus
   template<typename T>
-  static inline void callCCCPtrDestructor(T* instance) { instance->~T(); }
+  static inline void callCppPtrDestructor(T* instance) { instance->~T(); }
   #endif
     """].}
 
-macro defineCCCType*(name: untyped, importCppStr: string, headerStr: string = nil): untyped =
+macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = nil): untyped =
   result = nnkStmtList.newTree()
 
   result.add quote do:
@@ -73,138 +72,138 @@ macro defineCCCType*(name: untyped, importCppStr: string, headerStr: string = ni
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
-    converter `converterName`(co: CCCObject): `name` {.used, importcpp:"(#)".}
-    proc isCCCConcept*(T: typedesc[`name`]): bool = true
+    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    proc isCppObject*(T: typedesc[`name`]): bool = true
 
 # constructor call
-proc cppinit*(T: typedesc[CCCConcept]): T {.importcpp:"'0(@)", varargs, constructor.}
+proc cppinit*(T: typedesc[CppObject]): T {.importcpp:"'0(@)", varargs, constructor.}
 
 # magic placement new constructor for ptrs
-proc cppctor*[T: CCCConcept](x: ptr T): ptr T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
+proc cppctor*[T: CppObject](x: ptr T): ptr T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
 
 # magic placement new constructor for refs
-proc cppctor*[T: CCCConcept](x: ref T): ref T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
+proc cppctor*[T: CppObject](x: ref T): ref T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
 
 # normal destructor for value types
-proc cppdtor*[T: CCCConcept](x: T) {.importcpp:"#.~'1()".}
+proc cppdtor*[T: CppObject](x: T) {.importcpp:"#.~'1()".}
 
 # magic placement new compatible destructor for ptrs
-proc cppdtor*[T: CCCConcept](x: ptr T) {.importcpp:"callCCCPtrDestructor(#)".}
+proc cppdtor*[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for refs
-proc cppdtor*[T](x: ref T) {.importcpp:"callCCCPtrDestructor(#)".}
+proc cppdtor*[T](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
 
-proc cppdelptr*[T: CCCConcept](x: ptr T) =
+proc cppdelptr*[T: CppObject](x: ptr T) =
   x.cppdtor()
   dealloc(x)
 
-proc cppdelref*[T: CCCConcept](x: ref T) =
+proc cppdelref*[T: CppObject](x: ref T) =
   x.cppdtor()
 
-template cppnewref*(myRef: ref CCCConcept, args: typed): untyped =
+template cppnewref*(myRef: ref CppObject, args: typed): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdelref())
   myRef.cppctor(args)
 
-template cppnewref*(myRef: ref CCCConcept): untyped =
+template cppnewref*(myRef: ref CppObject): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdelref())
   myRef.cppctor()
 
-template cppnewptr*(myPtr: ptr CCCConcept, args: typed): untyped =
+template cppnewptr*(myPtr: ptr CppObject, args: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(args)
 
-template cppnewptr*(myPtr: ptr CCCConcept): untyped =
+template cppnewptr*(myPtr: ptr CppObject): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor()
 
-proc `+`  *(x, y: CCCObject): CCCObject {.importcpp:"(# + #)".}
-proc `-`  *(x, y: CCCObject): CCCObject {.importcpp:"(# - #)".}
-proc `*`  *(x, y: CCCObject): CCCObject {.importcpp:"(# * #)".}
-proc `/`  *(x, y: CCCObject): CCCObject {.importcpp:"(# / #)".}
-proc `%`  *(x, y: CCCObject): CCCObject {.importcpp:"(# % #)".}
-proc `+=` *(x, y: CCCObject): CCCObject {.importcpp:"(# += #)", discardable.}
-proc `-=` *(x, y: CCCObject): CCCObject {.importcpp:"(# -= #)", discardable.}
-proc `*=` *(x, y: CCCObject): CCCObject {.importcpp:"(# *= #)", discardable.}
-proc `/=` *(x, y: CCCObject): CCCObject {.importcpp:"(# /= #)", discardable.}
-proc `%=` *(x, y: CCCObject): CCCObject {.importcpp:"(# %= #)", discardable.}
-proc `++` *(x: CCCObject): CCCObject {.importcpp:"(++#)".}
-proc `--` *(x: CCCObject): CCCObject {.importcpp:"(--#)".}
-proc `>`  *(x, y: CCCObject): CCCObject {.importcpp:"(# > #)".}
-proc `<`  *(x, y: CCCObject): CCCObject {.importcpp:"(# < #)".}
-proc `>=` *(x, y: CCCObject): CCCObject {.importcpp:"(# >= #)".}
-proc `<=` *(x, y: CCCObject): CCCObject {.importcpp:"(# <= #)".}
-proc `and`*(x, y: CCCObject): CCCObject {.importcpp:"(# && #)".}
-proc `or` *(x, y: CCCObject): CCCObject {.importcpp:"(# || #)".}
-proc `not`*(x: CCCObject): CCCObject {.importcpp:"(!#)".}
-proc `in` *(x, y: CCCObject): CCCObject {.importcpp:"(# in #)".}
+proc `+`  *(x, y: CppProxy): CppProxy {.importcpp:"(# + #)".}
+proc `-`  *(x, y: CppProxy): CppProxy {.importcpp:"(# - #)".}
+proc `*`  *(x, y: CppProxy): CppProxy {.importcpp:"(# * #)".}
+proc `/`  *(x, y: CppProxy): CppProxy {.importcpp:"(# / #)".}
+proc `%`  *(x, y: CppProxy): CppProxy {.importcpp:"(# % #)".}
+proc `+=` *(x, y: CppProxy): CppProxy {.importcpp:"(# += #)", discardable.}
+proc `-=` *(x, y: CppProxy): CppProxy {.importcpp:"(# -= #)", discardable.}
+proc `*=` *(x, y: CppProxy): CppProxy {.importcpp:"(# *= #)", discardable.}
+proc `/=` *(x, y: CppProxy): CppProxy {.importcpp:"(# /= #)", discardable.}
+proc `%=` *(x, y: CppProxy): CppProxy {.importcpp:"(# %= #)", discardable.}
+proc `++` *(x: CppProxy): CppProxy {.importcpp:"(++#)".}
+proc `--` *(x: CppProxy): CppProxy {.importcpp:"(--#)".}
+proc `>`  *(x, y: CppProxy): CppProxy {.importcpp:"(# > #)".}
+proc `<`  *(x, y: CppProxy): CppProxy {.importcpp:"(# < #)".}
+proc `>=` *(x, y: CppProxy): CppProxy {.importcpp:"(# >= #)".}
+proc `<=` *(x, y: CppProxy): CppProxy {.importcpp:"(# <= #)".}
+proc `and`*(x, y: CppProxy): CppProxy {.importcpp:"(# && #)".}
+proc `or` *(x, y: CppProxy): CppProxy {.importcpp:"(# || #)".}
+proc `not`*(x: CppProxy): CppProxy {.importcpp:"(!#)".}
+proc `in` *(x, y: CppProxy): CppProxy {.importcpp:"(# in #)".}
 
-proc `[]`*(obj: CCCObject, field: auto): CCCObject {.importcpp:getImpl.}
+proc `[]`*(obj: CppProxy, field: auto): CppProxy {.importcpp:getImpl.}
   ## Return the value of a property of name `field` from a JsObject `obj`.
 
-proc `[]=`*[T](obj: CCCObject, field: auto, val: T) {.importcpp:setImpl.}
+proc `[]=`*[T](obj: CppProxy, field: auto, val: T) {.importcpp:setImpl.}
   ## Set the value of a property of name `field` in a JsObject `obj` to `v`.
 
-proc `[]`*(obj: CCCConcept, field: auto): CCCObject {.importcpp:getImpl.}
+proc `[]`*(obj: CppObject, field: auto): CppProxy {.importcpp:getImpl.}
   ## Return the value of a property of name `field` from a JsObject `obj`.
 
-proc `[]=`*[T](obj: CCCConcept, field: auto, val: T) {.importcpp:setImpl.}
+proc `[]=`*[T](obj: CppObject, field: auto, val: T) {.importcpp:setImpl.}
   ## Set the value of a property of name `field` in a JsObject `obj` to `v`.
 
 when defined(js):
-  # Conversion to and from CCCObject
-  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "(#)" .}
-    ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CppProxy
+  proc to*(x: CppProxy, T: typedesc): T {. importcpp: "(#)" .}
+    ## Converts a CppProxy `x` to type `T`.
 
-  # Conversion to and from CCCObject
-  proc to*[T](x: CCCObject): T {. importcpp: "(#)" .}
-    ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CppProxy
+  proc to*[T](x: CppProxy): T {. importcpp: "(#)" .}
+    ## Converts a CppProxy `x` to type `T`.
 else:
-  # Conversion to and from CCCObject
-  proc to*(x: CCCObject, T: typedesc[void]): T {. importcpp: "(#)" .}
-    ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CppProxy
+  proc to*(x: CppProxy, T: typedesc[void]): T {. importcpp: "(#)" .}
+    ## Converts a CppProxy `x` to type `T`.
 
-  # Conversion to and from CCCObject
-  proc to*(x: CCCObject, T: typedesc): T {. importcpp: "('0)(#)" .}
-    ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CppProxy
+  proc to*(x: CppProxy, T: typedesc): T {. importcpp: "('0)(#)" .}
+    ## Converts a CppProxy `x` to type `T`.
 
-  # Conversion to and from CCCObject
-  proc to*[T](x: CCCObject): T {. importcpp: "('0)(#)" .}
-    ## Converts a CCCObject `x` to type `T`.
+  # Conversion to and from CppProxy
+  proc to*[T](x: CppProxy): T {. importcpp: "('0)(#)" .}
+    ## Converts a CppProxy `x` to type `T`.
 
-proc toCCC*[T](val: T): CCCObject {. importcpp: "(#)" .}
-  ## Converts a value of any type to type CCCObject
+proc toCpp*[T](val: T): CppProxy {. importcpp: "(#)" .}
+  ## Converts a value of any type to type CppProxy
 
-template toCCC*(s: string): CCCObject = cstring(s).toCCC
+template toCpp*(s: string): CppProxy = cstring(s).toCpp
 
-converter toByte*(co: CCCObject): int8 {.used, importcpp:"(#)".}
-converter toUByte*(co: CCCObject): uint8 {.used, importcpp:"(#)".}
+converter toByte*(co: CppProxy): int8 {.used, importcpp:"(#)".}
+converter toUByte*(co: CppProxy): uint8 {.used, importcpp:"(#)".}
 
-converter toShort*(co: CCCObject): int16 {.used, importcpp:"(#)".}
-converter toUShort*(co: CCCObject): uint16 {.used, importcpp:"(#)".}
+converter toShort*(co: CppProxy): int16 {.used, importcpp:"(#)".}
+converter toUShort*(co: CppProxy): uint16 {.used, importcpp:"(#)".}
 
-converter toInt*(co: CCCObject): int {.used, importcpp:"(#)".}
-converter toUInt*(co: CCCObject): uint {.used, importcpp:"(#)".}
+converter toInt*(co: CppProxy): int {.used, importcpp:"(#)".}
+converter toUInt*(co: CppProxy): uint {.used, importcpp:"(#)".}
 
-converter toLong*(co: CCCObject): int64 {.used, importcpp:"(#)".}
-converter toULong*(co: CCCObject): uint64 {.used, importcpp:"(#)".}
+converter toLong*(co: CppProxy): int64 {.used, importcpp:"(#)".}
+converter toULong*(co: CppProxy): uint64 {.used, importcpp:"(#)".}
 
-converter toFloat*(co: CCCObject): float {.used, importcpp:"(#)".}
-converter toFloat32*(co: CCCObject): float32 {.used, importcpp:"(#)".}
+converter toFloat*(co: CppProxy): float {.used, importcpp:"(#)".}
+converter toFloat32*(co: CppProxy): float32 {.used, importcpp:"(#)".}
 
-converter toDouble*(co: CCCObject): float64 {.used, importcpp:"(#)".}
+converter toDouble*(co: CppProxy): float64 {.used, importcpp:"(#)".}
 
-converter toCString*(co: CCCObject): cstring {.used, importcpp:"(#)".}
+converter toCString*(co: CppProxy): cstring {.used, importcpp:"(#)".}
 
 when defined(js):
-  converter toWasmPtr*(co: CCCObject): WasmPtr {.used, importcpp:"(#)".}
+  converter toWasmPtr*(co: CppProxy): WasmPtr {.used, importcpp:"(#)".}
 
-macro cccFromAst*(n: untyped): untyped =
+macro CppFromAst*(n: untyped): untyped =
   result = n
   if n.kind == nnkStmtList:
     result = newProc(procType = nnkDo, body = result)
-  return quote: toCCC(`result`)
+  return quote: toCpp(`result`)
 
-macro `.`*(obj: CCCConcept, field: untyped): CCCObject =
+macro `.`*(obj: CppObject, field: untyped): CppProxy =
   ## Experimental dot accessor (get) for type JsObject.
   ## Returns the value of a property of name `field` from a JsObject `x`.
   ##
@@ -215,53 +214,53 @@ macro `.`*(obj: CCCConcept, field: untyped): CCCObject =
   ##  let obj = newJsObject()
   ##  obj.a = 20
   ##  console.log(obj.a) # puts 20 onto the console.
-  if validCCCName($field):
-    if obj.len == 0 and $obj == CCCGlobalName:
+  if validCppName($field):
+    if obj.len == 0 and $obj == CppGlobalName:
       let importString = "(" & $field & ")"
       result = quote do:
-        proc helper(): CCCObject {.importcpp:`importString`, gensym.}
+        proc helper(): CppProxy {.importcpp:`importString`, gensym.}
         helper()
     else:
       let importString = "#." & $field
       result = quote do:
-        proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym.}
+        proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
         helper(`obj`)
   else:
     if not mangledNames.hasKey($field):
-      mangledNames[$field] = $mangleCCCName($field)
+      mangledNames[$field] = $mangleCppName($field)
     
     let importString = "#." & mangledNames[$field]
     
     result = quote do:
-      proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym.}
+      proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
       helper(`obj`)
 
-macro `.=`*(obj: CCCConcept, field, value: untyped): untyped =
+macro `.=`*(obj: CppObject, field, value: untyped): untyped =
   ## Experimental dot accessor (set) for type JsObject.
   ## Sets the value of a property of name `field` in a JsObject `x` to `value`.
-  if validCCCName($field):
-    if obj.len == 0 and $obj == CCCGlobalName:
+  if validCppName($field):
+    if obj.len == 0 and $obj == CppGlobalName:
       let importString = $field & " = #"
       result = quote do:
         proc helper(v: auto) {.importcpp:`importString`, gensym.}
-        helper(`value`.toCCC)
+        helper(`value`.toCpp)
     else:
       let importString = "#." & $field & " = #"
       result = quote do:
-        proc helper(o: CCCConcept, v: auto) {.importcpp:`importString`, gensym.}
-        helper(`obj`, `value`.toCCC)
+        proc helper(o: CppObject, v: auto) {.importcpp:`importString`, gensym.}
+        helper(`obj`, `value`.toCpp)
   else:
     if not mangledNames.hasKey($field):
-      mangledNames[$field] = $mangleCCCName($field)
+      mangledNames[$field] = $mangleCppName($field)
     let importString = "#." & mangledNames[$field] & " = #"
     result = quote do:
-      proc helper(o: CCCConcept, v: auto) {. importcpp: `importString`, gensym .}
-      helper(`obj`, `value`.toCCC)
+      proc helper(o: CppObject, v: auto) {. importcpp: `importString`, gensym .}
+      helper(`obj`, `value`.toCpp)
 
-macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAst]): CCCObject =
-  # Experimental "method call" operator for type CCCObject.
+macro `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
+  # Experimental "method call" operator for type CppProxy.
   # Takes the name of a method of the JavaScript object (`field`) and calls
-  # it with `args` as arguments, returning a CCCObject (which may be discarded,
+  # it with `args` as arguments, returning a CppProxy (which may be discarded,
   # and may be `undefined`, if the method does not return anything,
   # so be careful when using this.)
   #
@@ -270,38 +269,38 @@ macro `.()`*(obj: CCCConcept, field: untyped, args: varargs[CCCObject, cccFromAs
   # .. code-block:: nim
   #
   #  # Let's get back to the console example:
-  #  var console {. importc, nodecl .}: CCCObject
+  #  var console {. importc, nodecl .}: CppProxy
   #  let res = console.log("I return undefined!")
   #  console.log(res) # This prints undefined, as console.log always returns
   #                   # undefined. Thus one has to be careful, when using
-  #                   # CCCObject calls. 
+  #                   # CppProxy calls. 
   var importString: string
-  if obj.len == 0 and $obj == CCCGlobalName:
+  if obj.len == 0 and $obj == CppGlobalName:
     importString = $field & "(@)"
     
     result = quote:
-      proc helper(): CCCObject {.importcpp:`importString`, gensym.}
+      proc helper(): CppProxy {.importcpp:`importString`, gensym.}
       helper()
   else:
-    if validCCCName($field):
+    if validCppName($field):
       when defined(js):
         importString = "#." & "_" & $field & "(@)"
       else:
         importString = "#." & $field & "(@)"
     else:
-      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCCCName($field)
+      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCppName($field)
       when defined(js):
         importString = "#." & "_" & mangledNames[$field] & "(@)"
       else:
         importString = "#." & mangledNames[$field] & "(@)"
 
     result = quote:
-      proc helper(o: CCCConcept): CCCObject {.importcpp:`importString`, gensym.}
+      proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
       helper(`obj`)
   
   for idx in 0 ..< args.len:
     let paramName = newIdentNode(("param" & $idx).toNimIdent)
-    result[0][3].add newIdentDefs(paramName, newIdentNode("CCCObject".toNimIdent))
+    result[0][3].add newIdentDefs(paramName, newIdentNode("CppProxy".toNimIdent))
     result[1].add args[idx].copyNimTree
     
 # iterator utils
@@ -321,8 +320,8 @@ iterator cppItems*[T, R](cset: var T): R =
 when isMainModule:
   {.emit:"#include <stdio.h>".}
   
-  defineCCCType(MyClass, "MyClass", "MyClass.hpp")
-  defineCCCType(MyClass2, "MyClass2", "MyClass.hpp")
+  defineCppType(MyClass, "MyClass", "MyClass.hpp")
+  defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
 
   # expandMacros:
   # dumpAstGen:
