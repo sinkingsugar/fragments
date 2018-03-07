@@ -3,7 +3,7 @@ pipeline:
     image: ntradingplus
     commands:
       - export PATH=$PATH:/root/Nim/bin/
-      - nim cpp --cincludes:. -r core/ffi/cccobject.nim
+      - nim cpp --cincludes:. -r core/ffi/cpp.nim
   
   telegram:
     image: appleboy/drone-telegram
