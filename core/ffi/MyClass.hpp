@@ -58,6 +58,26 @@ public:
     return x; 
   }
 
+  virtual int testVir()
+  {
+    return 0;
+  }
+
+  virtual int testVir2(int i)
+  {
+    return i;
+  }
+
+  virtual void testVir4(int i)
+  {
+    printf("AAAL %d\n", i);
+  }
+
+  virtual void testVir3(int i)
+  {
+    printf("AAAL %d\n", i);
+  }
+
   int number = 78;
   double myDouble = 7.7;
   MyClass class1;
