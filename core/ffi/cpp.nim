@@ -58,7 +58,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
   result = nnkStmtList.newTree()
 
   result.add quote do:
-    type `name` {.header: "", importcpp: "".} = object
+    type `name` {.header: "", importcpp: "", inheritable.} = object
 
   if headerStr != nil:
     # replace empty string with proper values
@@ -69,6 +69,67 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
     result[0][0][0][1].del(0)
     # replace empty string with proper values
     result[0][0][0][1][0][1] = newStrLitNode($importCppStr)
+
+  var converterName = newIdentNode("to" & $name)
+  result.add quote do:
+    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    proc isCppObject*(T: typedesc[`name`]): bool = true
+
+template cppOverride(str: string) {.pragma, used.}
+template cppCall(str: string) {.pragma, used.}
+
+macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, procs: untyped): untyped =
+  result = nnkStmtList.newTree()
+
+  var internalName = $name & "CppStruct"
+
+  var typeDecl = quote do:
+    type `name` {.importcpp:"".} = object of `superType`
+  typeDecl[0][0][1][0][1] = newStrLitNode($internalName)
+
+  var procsToAdd = newSeq[NimNode]()
+
+  var emitStmts = newSeq[NimNode]()
+
+  # we need forward decl
+  result.add quote do:
+    {.emit:["struct ", `internalName`,";\n"].}
+
+  emitStmts.add quote do:
+    {.emit:["struct ", `internalName`, " : public ", `superCppStr`, " {\n"].}
+
+  for overrideProc in procs:
+    echo overrideProc.treeRepr
+    var procStr = overrideProc[4][0][1]
+    var callStr = overrideProc[4][1][1]
+    var procName = $name & $overrideProc[0]
+    if overrideProc[3][0].kind == nnkEmpty: # void return
+      emitStmts.add quote do:
+        {.emit:[`procStr`, " override { return ", `procName`, "(this", `callStr`,"); }\n"].}
+    else:
+      emitStmts.add quote do:
+        {.emit:[`procStr`, " override { ", `procName`, "(this", `callStr`, "); }\n"].}
+
+    # mangle the name of the generated proc since we export c
+    overrideProc[0] = newIdentNode(procName)
+    # make sure we generate properly, idealy codegendecl is better?
+    overrideProc.addPragma(newIdentNode("exportc"))
+
+    # inject self
+    overrideProc[3].insert(1, newIdentDefs(ident("self"), `name`))
+
+    procsToAdd.add(overrideProc)
+
+  emitStmts.add quote do:
+    {.emit:["\n};\n"].}
+
+  result.add(typeDecl)
+
+  for procToAdd in procsToAdd:
+    result.add(procsToAdd)
+  
+  for emitStmt in emitStmts:
+    result.add(emitStmt)
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
@@ -319,9 +380,17 @@ iterator cppItems*[T, R](cset: var T): R =
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
+  {.emit:"#include <string>".}
   
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
+  defineCppSubType(MyOwnClass2, MyClass2, "MyClass2"):
+    proc testVir(): cint {.cppOverride:"int testVir()", cppCall:"".} =
+      return 22
+    proc testVir2(i: cint): cint {.cppOverride:"int testVir2(int i)", cppCall:",i".} =
+      return i + 22
+    proc testVir3(i: cint) {.cppOverride:"void testVir3(int i)", cppCall:",i".} =
+      echo i + 22
 
   # expandMacros:
   # dumpAstGen:
@@ -379,5 +448,13 @@ when isMainModule:
       x1.myCstring = myStr
       echo $x1.myCstring.to(cstring)
       # TODO check macros -> callsite macro
-    
+
+      x1.testVir3(11).to(void)
+
+      var subx1 = cppinit(MyOwnClass2)
+      echo $subx1.test20(1).to(cint)
+
+      subx1.testVir3(11).to(void)
+      subx1.testVir4(11).to(void)
+
     run()
