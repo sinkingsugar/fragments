@@ -65,6 +65,8 @@ template asyncCheck*(exp: untyped): untyped = discard exp
 template waitFor*(exp: untyped): untyped = (await exp)
 proc discardableAny*[T](self: T): T {.discardable.} = return self
 
+proc invoke*(self: JsObject): JsObject {.importcpp:"#()".}
+
 # this is defined in jssys, careful as might change in the future as it's interal for now basically
 var lastJSError {.importc.}: JsObject
 func isJsException*(exClass: JsObject): bool = instanceOf(lastJSError, exClass)
