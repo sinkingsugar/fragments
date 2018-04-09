@@ -1,4 +1,4 @@
-import math, bitops
+import math, bitops, random
 
 func lerp*(min, max, amount: SomeReal): SomeReal =
   return min + (max - min) * amount
@@ -41,6 +41,18 @@ func gaussian*(value, mean, standardDeviation: SomeReal): SomeReal =
   const normalizationFactor = 1.0 / sqrt(2.0 * PI)
   let offset = value - mean
   return normalizationFactor / standardDeviation * exp(-0.5 * offset * offset / (standardDeviation * standardDeviation))
+
+# Box-Mueller
+func randNormal*(mean, standardDeviation: SomeReal): SomeReal =
+  var u1 = 0.0
+  while u1 == 0.0:
+    u1 = 1.0 - rand(1.0)
+
+  let 
+    u2 = 1.0 - rand(1.0)
+    randStdNormal = sqrt(-2.0 * ln(u1)) * sin(2.0 * PI * u2)
+
+  return mean + standardDeviation * randStdNormal
 
 if isMainModule:
   assert(15.nextPowerOfTwo == 16)
