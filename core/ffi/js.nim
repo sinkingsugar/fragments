@@ -40,7 +40,6 @@ converter toDouble*(co: JsObject): float64 {.used, importcpp:"(#)".}
 converter toCString*(co: JsObject): cstring {.used, importcpp:"(#)".}
 
 # utilities
-proc require*(h: cstring): JsObject {.importcpp:"require(#)".}
 func instanceOf*(current, parent: JsObject): bool {.importcpp:"(# instanceof #)".}
 proc jsParseFloat*(o: JsObject): JsObject {.importcpp:"parseFloat(#)".}
 proc jsParseFloat*(o: cstring): JsObject {.importcpp:"parseFloat(#)".}
@@ -69,4 +68,4 @@ proc invoke*(self: JsObject): JsObject {.importcpp:"#()".}
 
 # this is defined in jssys, careful as might change in the future as it's interal for now basically
 var lastJSError* {.importc.}: JsObject
-func isJsException*(exClass: JsObject): bool = instanceOf(lastJSError, exClass)
+proc isJsException*(exClass: JsObject): bool = instanceOf(lastJSError, exClass)
