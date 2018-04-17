@@ -43,7 +43,7 @@ func gaussian*(value, mean, standardDeviation: SomeFloat): SomeFloat =
   return normalizationFactor / standardDeviation * exp(-0.5 * offset * offset / (standardDeviation * standardDeviation))
 
 # Box-Mueller
-func randNormal*(mean, standardDeviation: SomeFloat): SomeFloat =
+proc randNormal*(mean, standardDeviation: SomeFloat): SomeFloat =
   var u1 = 0.0
   while u1 == 0.0:
     u1 = 1.0 - rand(1.0)
