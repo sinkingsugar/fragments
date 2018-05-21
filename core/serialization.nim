@@ -31,9 +31,9 @@ proc readPackedInt*(stream: Stream): BiggestInt =
   var x = stream.readPackedUInt()
   return x.BiggestInt.zigZagDecode()
 
-template serializable*(): untyped {.pragma.}
+template serializable*(shouldSerialize: bool = true): untyped {.pragma.}
 
-func isBlittable(t: NimNode): bool {.compileTime.} =
+proc isBlittable(t: NimNode): bool {.compileTime.} =
   case t.typeKind:
     of ntyString, ntyCString, ntyProc, ntyPtr, ntyPointer, ntyRef, ntySequence: return false
     of ntyTypeDesc: return t.getTypeInst()[1].isBlittable     
@@ -43,16 +43,20 @@ func isBlittable(t: NimNode): bool {.compileTime.} =
       let inst = t.getTypeInst()
       case inst.kind:
         of nnkSym:
-          let typeDef = inst.symbol.getImpl()
+          let typeDef = inst.getImpl()
+          if t.typeKind notin { ntyObject, ntyTuple }:
+            return false
+
           let fieldDefs = if t.typeKind == ntyObject: typeDef[2][2] else: typeDef[2] # Tuples have no recList
           for field in fieldDefs:
             if not field[^2].isBlittable:
               return false
+
           return true
         else: return true
     else: return true
 
-func isBlittable(t: typedesc): bool {.compileTime.} =
+proc isBlittable(t: typedesc): bool {.compileTime.} =
   t.getType().isBlittable()
 
 type
@@ -93,8 +97,15 @@ method serialize(self: Serializer; instance: ref RootObj; context: Serialization
 method deserialize(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
 
 macro generateObjectSerializer(t: typedesc): untyped =
-  let typeDef = t.getTypeInst[1].getTypeInst().symbol.getImpl()
-  let fieldDefs = if t.getTypeInst[1].typeKind == ntyObject: typeDef[2][2] else: typeDef[2]
+  var typeDef = t.getTypeInst[1].getTypeInst().getImpl()
+
+  let isRef = typeDef[2].kind in {nnkRefTy, nnkPtrTy}
+  if isRef and typeDef[2][0].kind in {nnkSym, nnkBracketExpr}:
+    typeDef = typeDef[2][0].getImpl()
+  else:
+    typeDef = if isRef: typeDef[2][0] else: typeDef[2]
+
+  let fieldDefs = if typeDef.kind == nnkObjectTy: typeDef[2] else: typeDef
 
   let
     context = ident"context"
@@ -106,30 +117,44 @@ macro generateObjectSerializer(t: typedesc): untyped =
 
   # Call base type serializer first
   # TODO: Handle refs?
-  if t.getType().typeKind == ntyObject:
-    let inherit = typeDef[2][1]
-    if inherit.kind == nnkOfInherit:
-      let baseType = inherit[0]
-      assert baseType.kind == nnkIdent
-      if not eqIdent(baseType, "RootObj"):
-        serializers.add quote do: `baseType`(`value`).serialize(`context`)
-        deserializers.add quote do: `baseType`(`value`).deserialize(`context`)
+  # if t.getType().typeKind == ntyObject:
+  #   let inherit = typeDef[2][1]
+  #   if inherit.kind == nnkOfInherit:
+  #     let baseType = inherit[0]
+  #     assert baseType.kind == nnkIdent
+  #     if not eqIdent(baseType, "RootObj"):
+  #       serializers.add quote do: `baseType`(`value`).serialize(`context`)
+  #       deserializers.add quote do: `baseType`(`value`).deserialize(`context`)
 
   # Serialize fields
   # TODO: Handle visibility and make configurable per field
   for fieldDef in fieldDefs:
     for i in 0 ..< fieldDef.len - 2:
+      var shouldSerialize = true
       var fieldIdent = fieldDef[i]
-      if fieldIdent.kind == nnkPragmaExpr:
-        fieldIdent = fieldIdent[0]
-      fieldIdent = fieldIdent.basename
 
-      serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
-      deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
+      if fieldIdent.kind == nnkPragmaExpr:
+        for pragma in fieldIdent[1]:
+          if pragma.kind == nnkExprColonExpr and pragma[0].strVal == "serializable" and pragma[1].strVal == "false":
+            shouldSerialize = false
+        fieldIdent = fieldIdent[0]
+
+      if shouldSerialize:
+        fieldIdent = fieldIdent.basename
+        serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
+        deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
 
   result = quote do:
-    proc serialize*(`value`: `t`; `context`: SerializationContext) = `serializers`
-    proc deserialize*(`value`: var `t`; `context`: SerializationContext) = `deserializers`
+    type noref = type((
+      block:
+        var x: `t`
+        when compiles(x[]):
+          x[]
+        else:
+          x
+    ))
+    proc serialize*(`value`: noref; `context`: SerializationContext) = `serializers`
+    proc deserialize*(`value`: var noref; `context`: SerializationContext) = `deserializers`
 
 # Options
 proc serialize*(value: Option[Serializable]; context: SerializationContext) =
@@ -278,25 +303,34 @@ when isMainModule:
     Test2 = object
       s*: string
 
-    Test = object
-      a1*, a2: float
+    Test3 = tuple
+      a: int
+
+    Test = ref object
+      a1*, a2* {.serializable: false.}: float
       b*: seq[int]
       s*: string
       r*: Test2
       p*: ref float
-
-  var context = newSerializationContext(stream)
-  context.stream = stream  
+      t1*: Test3
+      t2*: tuple[a: int]
 
   var
-    r = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float)
-  r.p[] = 3.0
+    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))
+    r2 = Test()
+  r1.p[] = 3.0
 
   generateObjectSerializer(Test2)
   generateObjectSerializer(Test)
 
+  var context = newSerializationContext(stream)
+  context.stream = stream
   stream.setPosition(0)
-  serialize(r, context)
+  serialize(r1, context)
+
+  context = newSerializationContext(stream)
+  context.stream = stream  
   stream.setPosition(0)
-  deserialize(r, context)
-  echo r
+  deserialize(r2, context)
+
+  echo r2
