@@ -33,7 +33,7 @@ proc readPackedInt*(stream: Stream): BiggestInt =
 
 template serializable*(shouldSerialize: bool = true): untyped {.pragma.}
 
-proc isBlittable(t: NimNode): bool {.compileTime.} =
+proc isBlittable*(t: NimNode): bool {.compileTime.} =
   case t.typeKind:
     of ntyString, ntyCString, ntyProc, ntyPtr, ntyPointer, ntyRef, ntySequence: return false
     of ntyTypeDesc: return t.getTypeInst()[1].isBlittable     
@@ -56,7 +56,7 @@ proc isBlittable(t: NimNode): bool {.compileTime.} =
         else: return true
     else: return true
 
-proc isBlittable(t: typedesc): bool {.compileTime.} =
+proc isBlittable*(t: typedesc): bool {.compileTime.} =
   t.getType().isBlittable()
 
 type
@@ -65,7 +65,7 @@ type
     Reference
     Value
 
-  SerializationContext = ref object
+  SerializationContext* = ref object
     stream*: Stream
     references: seq[pointer]
     ids: Table[pointer, int]
@@ -86,17 +86,17 @@ type
     v.serialize(SerializationContext)
     m.deserialize(SerializationContext)
 
-proc newSerializationContext(stream: Stream): SerializationContext =
+proc newSerializationContext*(stream: Stream): SerializationContext =
   new(result)
   result.stream = stream
   result.references = @[]
   result.ids = initTable[pointer, int]()
 
-method serialize(self: Serializer; instance: ref RootObj; context: SerializationContext) {.base.} = discard
+method serialize*(self: Serializer; instance: ref RootObj; context: SerializationContext) {.base.} = discard
   
-method deserialize(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
+method deserialize*(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
 
-macro generateObjectSerializer(t: typedesc): untyped =
+macro generateObjectSerializer*(t: typedesc): untyped =
   var typeDef = t.getTypeInst[1].getTypeInst().getImpl()
 
   let isRef = typeDef[2].kind in {nnkRefTy, nnkPtrTy}
@@ -171,17 +171,17 @@ proc deserialize*[T: Serializable](value: var Option[T]; context: SerializationC
     temp.deserialize(context)
     value = temp.some    
 
-proc getRefId(self: SerializationContext; reference: ref): Option[int] =
+proc getRefId*(self: SerializationContext; reference: ref): Option[int] =
   let id = self.ids.getOrDefault(cast[pointer](reference), -1)
   return if id < 0: int.none else: id.some
 
-proc registerRef(self: SerializationContext; reference: ref) =
+proc registerRef*(self: SerializationContext; reference: ref) =
   let id = self.references.len
   let key = cast[pointer](reference)
   self.references.add(key)
   self.ids[key] = id
 
-proc getRefFromId[T](self: SerializationContext; id: int): ref T =
+proc getRefFromId*[T](self: SerializationContext; id: int): ref T =
   cast[ref T](self.references[id])
 
 # Refs
