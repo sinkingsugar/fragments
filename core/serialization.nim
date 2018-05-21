@@ -1,4 +1,4 @@
-import macros, streams, math.common, options
+import macros, streams, math.common, options, tables
 
 {.experimental.}
 
@@ -9,7 +9,6 @@ const
 proc writePackedUInt*(stream: Stream; value: BiggestUInt) =
   var remaining = value
   while remaining >= highBit.uint64:
-    echo (value or highBit).byte
     remaining = remaining shr 7
   stream.write(remaining.byte);
 
@@ -57,12 +56,19 @@ func isBlittable(t: typedesc): bool {.compileTime.} =
   t.getType().isBlittable()
 
 type
+  ReferenceSerializationKind {.pure, size: sizeof(int8).} = enum
+    Nil
+    Reference
+    Value
+
   SerializationContext = ref object
     stream*: Stream
+    references: seq[pointer]
+    ids: Table[pointer, int]
 
   Serializer = ref object of RootObj
 
-  # TODO: Override with shallow pragma
+  # TODO: Override with shallow pragma?
   Blittable* = concept type T
     T.isBlittable
 
@@ -76,7 +82,13 @@ type
     v.serialize(SerializationContext)
     m.deserialize(SerializationContext)
 
-method serialize(self: Serializer; instance: ref RootObj; context: SerializationContext) {.base.} = discard 
+proc newSerializationContext(stream: Stream): SerializationContext =
+  new(result)
+  result.stream = stream
+  result.references = @[]
+  result.ids = initTable[pointer, int]()
+
+method serialize(self: Serializer; instance: ref RootObj; context: SerializationContext) {.base.} = discard
   
 method deserialize(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
 
@@ -104,8 +116,9 @@ macro generateObjectSerializer(t: typedesc): untyped =
         deserializers.add quote do: `baseType`(`value`).deserialize(`context`)
 
   # Serialize fields
+  # TODO: Handle visibility and make configurable per field
   for fieldDef in fieldDefs:
-    for i in 0..<fieldDefs.len - 2:
+    for i in 0 ..< fieldDef.len - 2:
       var fieldIdent = fieldDef[i]
       if fieldIdent.kind == nnkPragmaExpr:
         fieldIdent = fieldIdent[0]
@@ -133,17 +146,30 @@ proc deserialize*[T: Serializable](value: var Option[T]; context: SerializationC
     temp.deserialize(context)
     value = temp.some    
 
+proc getRefId(self: SerializationContext; reference: ref): Option[int] =
+  let id = self.ids.getOrDefault(cast[pointer](reference), -1)
+  return if id < 0: int.none else: id.some
+
+proc registerRef(self: SerializationContext; reference: ref) =
+  let id = self.references.len
+  let key = cast[pointer](reference)
+  self.references.add(key)
+  self.ids[key] = id
+
+proc getRefFromId[T](self: SerializationContext; id: int): ref T =
+  cast[ref T](self.references[id])
+
 # Refs
 proc serialize*(value: ref Serializable; context: SerializationContext) =
   if value == nil:
-    context.stream.write(0'i8)
+    context.stream.write(ReferenceSerializationKind.Nil)
   else:
-    let id = context.getRefId()
+    let id = context.getRefId(value)
     if id.isSome:
-      context.stream.write(1'i8)
+      context.stream.write(ReferenceSerializationKind.Reference)
       context.stream.write(id)
     else:
-      context.stream.write(2'i8)
+      context.stream.write(ReferenceSerializationKind.Value)
       context.registerRef(value)
 
       when Serializable is Inheritable: discard
@@ -151,24 +177,25 @@ proc serialize*(value: ref Serializable; context: SerializationContext) =
         #let serializer = context.getSerializer(typeInfo)
         #serializer.serialize(value, context)
       else:
-        serialize(value.Serializable, context)     
+        serialize(value[], context)     
 
-proc deserialize*(value: var ref Serializable; context: SerializationContext) =
-  let kind = context.stream.readInt8()
+proc deserialize*[T: Serializable](value: var ref T; context: SerializationContext) =
+  let kind = context.stream.readInt8().ReferenceSerializationKind
   case kind:
-    of 0:
+    of ReferenceSerializationKind.Nil:
       value = nil
-    of 1:
+
+    of ReferenceSerializationKind.Reference:
       let id = context.stream.readInt64()
-      value = context.getRefFromId(id)
-    of 2:
+      value = getRefFromId[T](context, id.int)
+
+    of ReferenceSerializationKind.Value:
       when Serializable is Inheritable:
         discard
       else:
         new(value)
         context.registerRef(value)
-        deserialize(value.Serializable, context)  
-    else: discard
+        deserialize(value[], context)  
 
 # Blittable
 proc serialize*(value: Blittable; context: SerializationContext) =
@@ -195,11 +222,14 @@ proc deserialize*[T: Serializable](collection: var seq[T]; context: Serializatio
 # Strings
 proc serialize*(value: string; context: SerializationContext) =
   context.stream.writePackedInt(value.len)
-  context.stream.write(value)
+  if value.len > 0:
+    context.stream.write(value)
 
 proc deserialize*(value: var string; context: SerializationContext) =
   let length = context.stream.readPackedInt()
-  value = context.stream.readStr(length.int)
+  if length > 0:
+    value = context.stream.readStr(length.int)
+  else: value = ""
 
 static:
   type
@@ -241,24 +271,26 @@ when isMainModule:
   stream.writePackedInt(42)
   stream.writePackedUInt(42)
   stream.setPosition(0)
-  discard stream.readPackedInt()
-  discard stream.readPackedUInt()
+  assert stream.readPackedInt() == 42
+  assert stream.readPackedUInt() == 42
 
   type
     Test2 = object
       s*: string
 
     Test = object
-      a*: float
+      a1*, a2: float
       b*: seq[int]
       s*: string
-      #r*: Test2
+      r*: Test2
+      p*: ref float
 
-  var context = new SerializationContext
+  var context = newSerializationContext(stream)
   context.stream = stream  
 
   var
-    r = Test(a: 1.0, b: @[1, 2, 3], s: "Hello")
+    r = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float)
+  r.p[] = 3.0
 
   generateObjectSerializer(Test2)
   generateObjectSerializer(Test)
