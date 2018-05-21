@@ -1,6 +1,6 @@
 import math, bitops, random
 
-func lerp*(min, max, amount: SomeReal): SomeReal =
+func lerp*(min, max, amount: SomeFloat): SomeFloat =
   return min + (max - min) * amount
 
 func align*(value, alignment: SomeInteger): SomeInteger =
@@ -18,14 +18,14 @@ func powerOfTwoBase*(value: SomeUnsignedInt): SomeUnsignedInt =
   const bits = sizeof(value) * 8
   return if value != 0: bits - countTrailingZeroBits(value) else: 0
 
-func saturate*(value: SomeReal): SomeReal =
-  clamp(value, (SomeReal)0, (SomeReal)1)
+func saturate*(value: SomeFloat): SomeFloat =
+  clamp(value, (SomeFloat)0, (SomeFloat)1)
 
-func sRgbToLinear*(value: SomeReal): SomeReal =
+func sRgbToLinear*(value: SomeFloat): SomeFloat =
   if value < 0.04045: value / 12.92
   else: pow((value + 0.055) / 1.055, 2.4)
 
-func linearToSRgb*(value: SomeReal): SomeReal =
+func linearToSRgb*(value: SomeFloat): SomeFloat =
   if value < 0.0031308: value * 12.92
   else: 1.055 * pow(value, 1.0 / 2.4) - 0.055
 
@@ -37,13 +37,13 @@ func zigZagEncode*(value: SomeSignedInt): SomeSignedInt =
 func zigZagDecode*(value: SomeSignedInt): SomeSignedInt =
   return (value shr 1) xor -(value and 1)
 
-func gaussian*(value, mean, standardDeviation: SomeReal): SomeReal =
+func gaussian*(value, mean, standardDeviation: SomeFloat): SomeFloat =
   const normalizationFactor = 1.0 / sqrt(2.0 * PI)
   let offset = value - mean
   return normalizationFactor / standardDeviation * exp(-0.5 * offset * offset / (standardDeviation * standardDeviation))
 
 # Box-Mueller
-proc randNormal*(mean, standardDeviation: float): float =
+proc randNormal*(mean, standardDeviation: SomeFloat): SomeFloat =
   var u1 = 0.0
   while u1 == 0.0:
     u1 = 1.0 - rand(1.0)

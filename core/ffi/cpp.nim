@@ -360,8 +360,8 @@ macro `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]
       helper(`obj`)
   
   for idx in 0 ..< args.len:
-    let paramName = newIdentNode(("param" & $idx).toNimIdent)
-    result[0][3].add newIdentDefs(paramName, newIdentNode("CppProxy".toNimIdent))
+    let paramName = ident("param" & $idx)
+    result[0][3].add newIdentDefs(paramName, ident("CppProxy"))
     result[1].add args[idx].copyNimTree
     
 # iterator utils
