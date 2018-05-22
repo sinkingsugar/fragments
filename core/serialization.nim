@@ -192,7 +192,7 @@ proc serialize*(value: ref Serializable; context: SerializationContext) =
     let id = context.getRefId(value)
     if id.isSome:
       context.stream.write(ReferenceSerializationKind.Reference)
-      context.stream.write(id)
+      context.stream.write(id.get().int64)
     else:
       context.stream.write(ReferenceSerializationKind.Value)
       context.registerRef(value)
