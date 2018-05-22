@@ -61,7 +61,7 @@ proc isBlittable*(t: typedesc): bool {.compileTime.} =
   t.getType().isBlittable()
 
 type
-  ReferenceSerializationKind {.pure, size: sizeof(int8).} = enum
+  ReferenceSerializationKind* {.pure, size: sizeof(int8).} = enum
     Nil
     Reference
     Value
