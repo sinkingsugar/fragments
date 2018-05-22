@@ -40,20 +40,21 @@ proc isBlittable*(t: NimNode): bool {.compileTime.} =
     of ntyDistinct: return t[1].isBlittable
     of ntyArray: return t.getTypeInst()[2].isBlittable
     of ntyObject, ntyTuple:
-      let inst = t.getTypeInst()
-      case inst.kind:
-        of nnkSym:
-          let typeDef = inst.getImpl()
-          if t.typeKind notin { ntyObject, ntyTuple }:
-            return false
 
-          let fieldDefs = if t.typeKind == ntyObject: typeDef[2][2] else: typeDef[2] # Tuples have no recList
-          for field in fieldDefs:
-            if not field[^2].isBlittable:
-              return false
+      var typeDef = t.getTypeInst()
 
-          return true
-        else: return true
+      if typeDef.kind == nnkSym:
+        typeDef = typeDef.getImpl()
+
+      if typeDef.kind == nnkTypeDef:
+        typeDef = typeDef[2]
+
+      let fieldDefs = if t.typeKind == ntyObject: typeDef[2] else: typeDef # Tuples have no recList
+      for field in fieldDefs:
+        if not field[^2].isBlittable:
+          return false
+
+      return true
     else: return true
 
 proc isBlittable*(t: typedesc): bool {.compileTime.} =
@@ -313,7 +314,7 @@ when isMainModule:
       r*: Test2
       p*: ref float
       t1*: Test3
-      t2*: tuple[a: int]
+      t2* {.serializable: false.}: tuple[a: int]
 
   var
     r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))
