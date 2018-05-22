@@ -97,6 +97,23 @@ method serialize*(self: Serializer; instance: ref RootObj; context: Serializatio
   
 method deserialize*(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
 
+macro declareObjectSerializer*(t: typedesc): untyped =
+  let
+    context = ident"context"
+    value = ident"value"
+
+  result = quote do:
+    type noref = type((
+      block:
+        var x: `t`
+        when compiles(x[]):
+          x[]
+        else:
+          x
+    ))
+    proc serialize*(`value`: noref; `context`: SerializationContext)
+    proc deserialize*(`value`: var noref; `context`: SerializationContext)
+
 macro generateObjectSerializer*(t: typedesc): untyped =
   var typeDef = t.getTypeInst[1].getTypeInst().getImpl()
 
@@ -320,6 +337,8 @@ when isMainModule:
     r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))
     r2 = Test()
   r1.p[] = 3.0
+
+  declareObjectSerializer(Test)
 
   generateObjectSerializer(Test2)
   generateObjectSerializer(Test)
