@@ -193,6 +193,8 @@ proc `>`  *(x, y: CppProxy): CppProxy {.importcpp:"(# > #)".}
 proc `<`  *(x, y: CppProxy): CppProxy {.importcpp:"(# < #)".}
 proc `>=` *(x, y: CppProxy): CppProxy {.importcpp:"(# >= #)".}
 proc `<=` *(x, y: CppProxy): CppProxy {.importcpp:"(# <= #)".}
+proc `<<` *(x, y: CppProxy): CppProxy {.importcpp:"(# << #)".}
+proc `>>` *(x, y: CppProxy): CppProxy {.importcpp:"(# >> #)".}
 proc `and`*(x, y: CppProxy): CppProxy {.importcpp:"(# && #)".}
 proc `or` *(x, y: CppProxy): CppProxy {.importcpp:"(# || #)".}
 proc `not`*(x: CppProxy): CppProxy {.importcpp:"(!#)".}
