@@ -161,21 +161,37 @@ proc cppdelptr*[T: CppObject](x: ptr T) =
 proc cppdelref*[T: CppObject](x: ref T) =
   x.cppdtor()
 
-template cppnewref*(myRef: ref CppObject, args: typed): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdelref())
-  myRef.cppctor(args)
+# refs
 
 template cppnewref*(myRef: ref CppObject): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdelref())
   myRef.cppctor()
 
-template cppnewptr*(myPtr: ptr CppObject, args: typed): untyped =
-  myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
-  myPtr.cppctor(args)
+# I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
+
+template cppnewref*(myRef: ref CppObject, arg0: typed): untyped =
+  new(myRef, proc(self: type(myRef)) = self.cppdelref())
+  myRef.cppctor(arg0)
+
+template cppnewref*(myRef: ref CppObject, arg0: typed, arg1: typed): untyped =
+  new(myRef, proc(self: type(myRef)) = self.cppdelref())
+  myRef.cppctor(arg0, arg1)
+
+# ptr
 
 template cppnewptr*(myPtr: ptr CppObject): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor()
+
+# I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
+
+template cppnewptr*(myPtr: ptr CppObject, arg0: typed): untyped =
+  myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
+  myPtr.cppctor(arg0)
+
+template cppnewptr*(myPtr: ptr CppObject, arg0: typed, arg1: typed): untyped =
+  myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
+  myPtr.cppctor(arg0, arg1)
 
 proc `+`  *(x, y: CppProxy): CppProxy {.importcpp:"(# + #)".}
 proc `-`  *(x, y: CppProxy): CppProxy {.importcpp:"(# - #)".}
