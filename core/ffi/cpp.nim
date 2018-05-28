@@ -75,8 +75,8 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
     converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
     proc isCppObject*(T: typedesc[`name`]): bool = true
 
-template cppOverride(str: string) {.pragma, used.}
-template cppCall(str: string) {.pragma, used.}
+template cppOverride*(str: string) {.pragma, used.}
+template cppCall*(str: string) {.pragma, used.}
 
 macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, procs: untyped): untyped =
   result = nnkStmtList.newTree()
@@ -85,6 +85,7 @@ macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, pr
 
   var typeDecl = quote do:
     type `name` {.importcpp:"".} = object of `superType`
+      x: int
   typeDecl[0][0][1][0][1] = newStrLitNode($internalName)
 
   var procsToAdd = newSeq[NimNode]()
@@ -98,27 +99,33 @@ macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, pr
   emitStmts.add quote do:
     {.emit:["struct ", `internalName`, " : public ", `superCppStr`, " {\n"].}
 
-  for overrideProc in procs:
-    echo overrideProc.treeRepr
-    var procStr = overrideProc[4][0][1]
-    var callStr = overrideProc[4][1][1]
-    var procName = $name & $overrideProc[0]
-    if overrideProc[3][0].kind == nnkEmpty: # void return
-      emitStmts.add quote do:
-        {.emit:[`procStr`, " override { return ", `procName`, "(this", `callStr`,"); }\n"].}
+  for node in procs:
+    echo node.treeRepr
+    case node.kind
+    of nnkProcDef:  
+      var procStr = node[4][0][1]
+      var callStr = node[4][1][1]
+      var procName = $name & $node[0]
+      if node[3][0].kind == nnkEmpty: # void return
+        emitStmts.add quote do:
+          {.emit:[`procStr`, " override { return ", `procName`, "(this", `callStr`,"); }\n"].}
+      else:
+        emitStmts.add quote do:
+          {.emit:[`procStr`, " override { ", `procName`, "(this", `callStr`, "); }\n"].}
+
+      # mangle the name of the generated proc since we export c
+      node[0] = newIdentNode(procName)
+      # make sure we generate properly, idealy codegendecl is better?
+      node.addPragma(newIdentNode("exportc"))
+
+      # inject self
+      node[3].insert(1, newIdentDefs(ident("self"), `name`))
+
+      procsToAdd.add(node)
+    of nnkCall:
+      discard
     else:
-      emitStmts.add quote do:
-        {.emit:[`procStr`, " override { ", `procName`, "(this", `callStr`, "); }\n"].}
-
-    # mangle the name of the generated proc since we export c
-    overrideProc[0] = newIdentNode(procName)
-    # make sure we generate properly, idealy codegendecl is better?
-    overrideProc.addPragma(newIdentNode("exportc"))
-
-    # inject self
-    overrideProc[3].insert(1, newIdentDefs(ident("self"), `name`))
-
-    procsToAdd.add(overrideProc)
+      discard
 
   emitStmts.add quote do:
     {.emit:["\n};\n"].}
