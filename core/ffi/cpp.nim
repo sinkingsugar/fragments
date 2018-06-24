@@ -1,6 +1,6 @@
 {.experimental.}
 
-import macros, tables
+import macros, tables, strutils
 
 type
   CppProxy* {.nodecl.} = object
@@ -9,6 +9,77 @@ type
 
 when defined(js):
   type WasmPtr* = distinct int
+else:
+  # compiler utilities
+  macro cppdefines*(defines: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for adefine in defines:
+      var str: string
+      when defined(windows) and defined(vcc):
+        str = "/D" & $adefine
+      else:
+        str = "-D" & $adefine
+        
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passC"), newLit(str)))
+      
+  macro cppincludes*(includes: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for incl in includes:
+      var str: string
+      when defined windows:
+        let win_incl = ($incl).replace("/", "\\")
+        when defined vcc:
+          str = "/I" & win_incl
+        else:
+          str = "-I" & win_incl
+      else:
+        str = "-I" & $incl
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passC"), newLit(str)))
+      
+  macro cppfiles*(files: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for file in files:
+      var str: string
+      when defined windows:
+        let win_incl = ($file).replace("/", "\\") 
+        str = win_incl
+      else:
+        str = $file
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("compile"), newLit(str)))
+      
+  macro cpplibpaths*(paths: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for path in paths:
+      var str: string
+      when defined windows:
+        let win_path = ($path).replace("/", "\\")
+        when defined vcc:
+          str = "/LIBPATH:" & win_path
+        else:
+          str = "-L" & win_path
+      else:
+        str = "-L" & $path
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
+      
+  macro cpplibs*(libs: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for lib in libs:
+      var str: string
+      when defined windows:
+        let win_incl = ($lib).replace("/", "\\") 
+        str = win_incl
+      else:
+        str = $lib
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
 
 var
   mangledNames {. compileTime .} = initTable[string, string]()
@@ -78,6 +149,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
 template cppOverride*(str: string) {.pragma, used.}
 template cppCall*(str: string) {.pragma, used.}
 
+# to be improved
 macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, procs: untyped): untyped =
   result = nnkStmtList.newTree()
 
@@ -407,8 +479,15 @@ when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
   
+  cppdefines("MYDEFINE", "MYDEFINE2=10")
+  cppincludes(".")
+  cppfiles("MyClass.cpp")
+  cpplibpaths(".")
+  
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
+  
+  #[ to be improved
   defineCppSubType(MyOwnClass2, MyClass2, "MyClass2"):
     proc testVir(): cint {.cppOverride:"int testVir()", cppCall:"".} =
       return 22
@@ -416,10 +495,11 @@ when isMainModule:
       return i + 22
     proc testVir3(i: cint) {.cppOverride:"void testVir3(int i)", cppCall:",i".} =
       echo i + 22
+  ]#
 
   # expandMacros:
   # dumpAstGen:
-  when true:
+  when true: 
     proc run() =
       var x = cppinit(MyClass, 1)
       var y = cast[ptr MyClass](alloc0(sizeof(MyClass)))
@@ -476,10 +556,10 @@ when isMainModule:
 
       x1.testVir3(11).to(void)
 
-      var subx1 = cppinit(MyOwnClass2)
-      echo $subx1.test20(1).to(cint)
+      # var subx1 = cppinit(MyOwnClass2)
+      # echo $subx1.test20(1).to(cint)
 
-      subx1.testVir3(11).to(void)
-      subx1.testVir4(11).to(void)
+      # subx1.testVir3(11).to(void)
+      # subx1.testVir4(11).to(void)
 
     run()
