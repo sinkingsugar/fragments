@@ -2,7 +2,6 @@ import math, macros, strutils, vectors, common
   
 {.experimental.}
 
-
 const
   DefaultVectorSize = 4
 
@@ -35,10 +34,15 @@ type
   Int3* = Vector[int32, 3]
   Int4* = Vector[int32, 4]
 
+  Bool2* = Vector[bool, 2]
+  Bool3* = Vector[bool, 3]
+  Bool4* = Vector[bool, 4]
+
   # Quaternion types
-  QuaternionBase*[T] = distinct Vector[T, 4]
-  Quaternion* = distinct Vector[float32, 4]
-  QuaternionWide* = distinct Vector[Wide, 4]
+  QuaternionBase*[T] = object
+    elements: array[4, T]
+  Quaternion* = QuaternionBase[float32]
+  QuaternionWide* = QuaternionBase[Wide]
 
   # Common matrix types
   Matrix2x2* = Matrix[float32, 2, 2]
@@ -50,19 +54,26 @@ type
   SquareMatrix*[T; size: static[int]] = concept v
     v is Matrix[T, size, size]
 
-  NonScalar*[T] = concept v
+  NonScalar*[T] = concept v, var m
     v.elements[int] is T
-    v.elements[int] = T
+    m.elements[int] = T
+    v.elements.len is int
 
-template elementwise*(op: untyped): untyped =
-  proc op*(self: Vector): Vector =
-    for i in 0..<Vector.size:
-      result[i] = op(self[i])
+template mapInline*[T; size: static[int]](value: Vector[T, size], op: untyped): untyped =
+  for i in 0 ..< size:
+    result[i] = op(value[i])  
 
-template elementwiseBinary*(op: untyped): untyped =
-  proc op*(left, right: Vector): Vector =
-    for i in 0..<Vector.size:
-      result[i] = op(left[i], right[i])
+template mapInlineBinary*[T; size: static[int]](left, right: Vector[T, size], op: untyped): untyped =
+  for i in 0 ..< size:
+    result[i] = op(left[i], right[i])  
+
+template makeUniversal*(op: untyped): untyped =
+  func op*(value: Vector): Vector {.noinit.} =
+    mapInline(value, op)
+
+template makeUniversalBinary*(op: untyped): untyped =
+  func op*(left, right: Vector): Vector {.noinit.} =
+    mapInlineBinary(left, right, op)
 
 # converter toVector[T; size: static[int]](value: T): Vector[T, size] =
 #   for i in 0..<size:
@@ -106,7 +117,7 @@ func getSwizzleIndex(c: char): int {.compileTime.} =
     else: raiseAssert($c & " is not a valid vector swizzle")
 
 # Assumes `[]` operator and the convertor from arrays on vectors
-macro `.`*(self: Vector; swizzle: untyped): untyped =
+macro `.`*(self: Vector | QuaternionBase; swizzle: untyped): untyped =
   var
     cardinality = ($swizzle).len
 
@@ -125,20 +136,12 @@ macro `.`*(self: Vector; swizzle: untyped): untyped =
     for c in $swizzle:
       values.add(nnkBracketExpr.newTree(temp, newIntLitNode(c.getSwizzleIndex)))
 
-    return newStmtList(
-      # let temp = self
-      nnkLetSection.newTree(newIdentDefs(temp, newEmptyNode(), self)),
-
-      # Vector[temp.T, cardinality]([...])
-      newCall(
-        nnkBracketExpr.newTree(
-          newIdentNode("toVector"),
-          newDotExpr(temp, newIdentNode("T")),
-          newIntLitNode(cardinality)
-        ), values))
+    return quote do:
+      let `temp` = `self`
+      toVector[`temp`.T, `cardinality`](`values`)
 
 # Assumes `[]` and `[]=` operators on vectors
-macro `.=`*(self: var Vector; swizzle: untyped; value: untyped): untyped =
+macro `.=`*(self: var Vector | QuaternionBase; swizzle: untyped; value: untyped): untyped =
   var 
     cardinality = ($swizzle).len
   
@@ -195,17 +198,9 @@ macro `.`*(self: Matrix; swizzle: untyped): untyped =
       let (row, column) = index
       values.add(nnkBracketExpr.newTree(temp, newIntLitNode(row), newIntLitNode(column)))
 
-    return newStmtList(
-      # let temp = self
-      nnkLetSection.newTree(newIdentDefs(temp, newEmptyNode(), self)),
-
-      # Vector[temp.T, cardinality]([...])
-      newCall(
-        nnkBracketExpr.newTree(
-          newIdentNode("toVector"),
-          newDotExpr(temp, newIdentNode("T")),
-          newIntLitNode(cardinality)
-        ), values))
+    return quote do:
+      let `temp` = `self`
+      toVector[`temp`.T, `cardinality`](`values`)
 
 # Assumes `[]` and `[]=` operators on matrices
 macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
@@ -244,7 +239,7 @@ macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
 converter toVector*[T](value: (T, T)): Vector[T, 2] = (result.x, result.y) = value
 
 # 3 element tuples converters
-converter toVector*[T](value: (T, T, T)): Vector[T, 3] = (result.x, result.x, result.z) = value
+converter toVector*[T](value: (T, T, T)): Vector[T, 3] = (result.x, result.y, result.z) = value
 
 # 4 element tuples converters
 converter toVector*[T](value: (T, T, T, T)): Vector[T, 4] = (result.x, result.y, result.z, result.w) = value
@@ -257,13 +252,24 @@ converter toVector*[T](value: (Vector[T, 3], T)): Vector[T, 4] = (result.xyz, re
 # func one*(_: typedesc[Vector]): Vector =
 #   result = 1
 
-func identity*(_: typedesc[QuaternionBase]): QuaternionBase =
-  result.w = 1
+func identity*[T](_: typedesc[QuaternionBase[T]]): QuaternionBase[T] =
+  result.w = 1.T
 
 func identity*[T; size: static[int]](_: typedesc[Matrix[T, size, size]]): Matrix[T, size, size] =
   for i in 0..<size:
-    result[i, i] = (T)1
+    result[i, i] = 1.T
+
+func zero*[T; width: static[int]](_: typedesc[Vector[T, width]]): Vector[T, width] = discard
+
+func unitX*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+  result.x = 1.T
   
+func unitY*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+  result.y = 1.T
+
+func unitZ*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+  result.z = 1.T
+
 # Vector addition
 func `+` *[T; w: static[int]](left, right: Vector[T, w]): Vector[T, w] =
   for i in 0..<w:
@@ -276,6 +282,12 @@ func `-` *(self: Vector): Vector =
 template `-` *(left, right: Vector): Vector =
   left + -right
 
+template `+=` *(left: var Vector; right: Vector) =
+  left = left + right
+
+template `-=` *(left: var Vector; right: Vector) =
+  left = left - right
+  
 # TODO: Somehow causes conflict with `.` operator
 # func `/` *(left: Vector; right: Vector.T): Vector =
 func `*` *[T; width: static[int]](left: Vector[T, width]; right: T): Vector[T, width] =
@@ -283,7 +295,14 @@ func `*` *[T; width: static[int]](left: Vector[T, width]; right: T): Vector[T, w
     result[i] = left[i] * right
 
 template `/` *(left: Vector; right: Vector.T): Vector =
-  left * (Vector.T(1) / right)
+  left * (Vector.T)1 / right
+
+func `*` *[T](left: QuaternionBase[T]; right: T): QuaternionBase[T] =
+  for i in 0..<4:
+    result[i] = left[i] * right
+
+template `/` *(left: QuaternionBase; right: QuaternionBase.T): QuaternionBase =
+  left * (QuaternionBase.T)1 / right
 
 func `*` *(left, right: Vector): Vector =
   for i in 0..<Vector.size:
@@ -298,13 +317,13 @@ func dot*(left, right: Vector): Vector.T =
     result += left[i] * right[i]
 
 func cross*[T](left, right: Vector[T, 3]): Vector[T, 3] =
-  return left.yzx * right.zxz - left.zxz * right.yzx
+  return left.yzx * right.zxy - left.zxy * right.yzx
 
 func lengthSquared*(self: Vector): Vector.T =
   return dot(self, self)
 
 func length*(self: Vector): Vector.T =
-  return sqrt(lengthSquared)
+  return sqrt(self.lengthSquared)
 
 func distanceSquared*(left, right: Vector): Vector.T =
   return (left - right).lengthSquared
@@ -313,25 +332,30 @@ func distance*(left, right: Vector): Vector.T =
   return (left - right).length
 
 func normalized*(self: Vector): Vector =
-  let lenth = self.length
+  let length = self.length
   if length > 0:
     return self / self.length
   else:
     return self
 
-func min*(left, right: Vector): Vector =
-  for i in 0..<Vector.size:
-    result[i] = min(left[i], right[i])
+func lengthSquared*(self: QuaternionBase): QuaternionBase.T =
+  return self.xyzw.lengthSquared
 
-func max*(left, right: Vector): Vector =
-  for i in 0..<Vector.size:
-    result[i] = max(left[i], right[i])
+func length*(self: QuaternionBase): QuaternionBase.T =
+  return sqrt(self.lengthSquared)
+    
+func normalized*(self: QuaternionBase): QuaternionBase =
+  let length = self.length
+  if length > 0:
+    return self / self.length
+  else:
+    return self
 
-func clamp*(value, min, max: Vector): Vector =
-  return max(min, min(value, max))
-
-func saturate*(value: Vector): Vector =
-  return clamp(value, Vector.zero, Vector.one)
+makeUniversal(abs)
+makeUniversal(clamp)
+makeUniversal(saturate)
+makeUniversalBinary(min)
+makeUniversalBinary(max)
 
 func lerp*(min, max: Vector; amount: Vector.T): Vector =
   for i in 0..<Vector.size:
@@ -343,62 +367,80 @@ func smoothstep*(min, max: Vector; amount: Vector.T): Vector =
   return lerp(min, max, lerpAmount)
 
 func hermite*(value1, value2, tangent1, tangent2: Vector, amount: Vector.T): Vector =
-  let squared = amount * amount;
-  let cubed = amount * squared;
-  let part1 = ((2 * cubed) - (3 * squared)) + 1;
-  let part2 = (-2 * cubed) + (3 * squared);
-  let part3 = (cubed - (2 * squared)) + amount;
-  let part4 = cubed - squared;
+  let squared = amount * amount
+  let cubed = amount * squared
+  let part1 = ((2 * cubed) - (3 * squared)) + 1
+  let part2 = (-2 * cubed) + (3 * squared)
+  let part3 = (cubed - (2 * squared)) + amount
+  let part4 = cubed - squared
 
   return (((value1 * part1) + (value2 * part2)) + (tangent1 * part3)) + (tangent2 * part4);
 
 func catmullRom*(value1, value2, value3, value4: Vector, amount: Vector.T): Vector =
-  let squared = amount * amount;
-  let cubed = squared * amount;
+  let squared = amount * amount
+  let cubed = squared * amount
 
-  let factor0 = -cubed + 2 * squared - amount;
-  let factor1 = 3 * cubed - 5 * squared + 2;
-  let factor2 = -3 * cubed + 4 * squared + amount;
-  let factor3 = cubed - squared;
+  let factor0 = -cubed + 2 * squared - amount
+  let factor1 = 3 * cubed - 5 * squared + 2
+  let factor2 = -3 * cubed + 4 * squared + amount
+  let factor3 = cubed - squared
 
-  return 0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3);
+  return (Vector.T)0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
 
 func barycentric*(value1, value2, value3: Vector; amount1, amount2: Vector.T): Vector =
   return (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
 
-func transformNormal*[T](transform: Matrix[T, 4, 4]; normal: Vector[T, 3]): Vector[T, 3] =
+func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   return (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
 
-func transformCoordinate*[T](transform: Matrix[T, 4, 4]; coordinate: Vector[T, 3]): Vector[T, 3] =
-  let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
+func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
+  let invW = 1.T / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
 
-func transform*[T](rotation: QuaternionBase[T]; vector: Vector[T, 3]): Vector[T, 3] =
-  let x = rotation.x + rotation.x
-  let y = rotation.y + rotation.y
-  let z = rotation.z + rotation.z
-  let wx = rotation.w * x
-  let wy = rotation.w * y
-  let wz = rotation.w * z
-  let xx = rotation.x * x
-  let xy = rotation.x * y
-  let xz = rotation.x * z
-  let yy = rotation.y * y
-  let yz = rotation.y * z
-  let zz = rotation.z * z
+func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T, 3] =
+  # Rotates a vector v by a quaternion q, through conjugation q * v * q^-1. Concatenation of rotations is therefore multiplication
+  # of quaternions with the right-most quaternion being applied first (as opposed to column matrices).
+  let
+    x = rotation.x + rotation.x
+    y = rotation.y + rotation.y
+    z = rotation.z + rotation.z
+    
+    wx = rotation.w * x
+    wy = rotation.w * y
+    wz = rotation.w * z
+    xx = rotation.x * x
+    xy = rotation.x * y
+    xz = rotation.x * z
+    yy = rotation.y * y
+    yz = rotation.y * z
+    zz = rotation.z * z
 
-  result.x = ((vector.x * ((1.0 - yy) - zz)) + (vector.y * (xy - wz))) + (vector.z * (xz + wy))
-  result.y = ((vector.x * (xy + wz)) + (vector.y * ((1.0 - xx) - zz))) + (vector.z * (yz - wx))
-  result.z = ((vector.x * (xz - wy)) + (vector.y * (yz + wx))) + (vector.z * ((1.0 - xx) - yy))
+  result.x = ((vector.x * ((1.T - yy) - zz)) + (vector.y * (xy - wz))) + (vector.z * (xz + wy))
+  result.y = ((vector.x * (xy + wz)) + (vector.y * ((1.T - xx) - zz))) + (vector.z * (yz - wx))
+  result.z = ((vector.x * (xz - wy)) + (vector.y * (yz + wx))) + (vector.z * ((1.T - xx) - yy))
 
 func project*[T](vector: Vector[T, 3]; x, y, width, height, minZ, maxZ: T; worldViewProjection: Matrix): Vector[T, 3] =
   let v = worldViewProjection.transformCoordinate(vector)
-  result.x = ((1.0 + v.x) * 0.5 * width) + x
-  result.y = ((1.0 - v.y) * 0.5 * height) + y
+  result.x = ((1.T + v.x) * (T)0.5 * width) + x
+  result.y = ((1.T - v.y) * (T)0.5 * height) + y
   result.z = (v.z * (maxZ - minZ)) + minZ
 
 func reflect*[T](vector, normal: Vector[T, 3]): Vector[T, 3] =
-  return vector - normal * 2.0 * dot(vector, normal)
+  return vector - normal * 2.T * dot(vector, normal)
+
+func `*` *(left, right: QuaternionBase): QuaternionBase =
+  result.xyz = left.xyz * right.w + right.xyz * left.w + cross(left.xyz, right.xyz)
+  result.w = left.w + right.w - dot(left.xyz, right.xyz)
+
+func concatenate*(first, second: QuaternionBase): QuaternionBase =
+  # Concatenate two quaternions representing rotations. The first argument is the first rotation applied.
+  second * first
+
+func rotationAxisQuaternion*[T](axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
+  # TODO: identity if zero axis?
+  let halfAngle = angle * (T)0.5;
+  result.xyz = axis.normalized * sin(halfAngle)
+  result.w = cos(halfAngle)
 
 # Matrix multiplication
 func `*` *[T; height, width, count: static[int]](
@@ -410,42 +452,174 @@ func `*` *[T; height, width, count: static[int]](
     for c in 0..<width:
       for i in 0..<count:
         result[r, c] = result[r, c] + left[r, i] * right[i, c]
-              
+
+func translation*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
+  result = Matrix[T, 4, 4].identity
+  result.m30m31m32 = value
+
+func scaling*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
+  result.m00m11m22 = value
+  result.m33 = 1.T
+
 func rotationAxis*[T](axis: Vector[T, 3]; angle: T): Matrix[T, 4, 4] =
-  let sin = sin(angle)
-  let cos = cos(angle)
+  let
+    sin = sin(angle)
+    cos = cos(angle)
 
-  let xx = axis.x * axis.x
-  let yy = axis.y * axis.y
-  let zz = axis.z * axis.z
-  let xy = axis.x * axis.y
-  let xz = axis.x * axis.z
-  let yz = axis.y * axis.z
+    xx = axis.x * axis.x
+    yy = axis.y * axis.y
+    zz = axis.z * axis.z
+    xy = axis.x * axis.y
+    xz = axis.x * axis.z
+    yz = axis.y * axis.z
 
-  result.m00 = xx + (cos * (1.0f - xx))
+  result.m00 = xx + (cos * (1.T - xx))
   result.m01 = (xy - (cos * xy)) + (sin * axis.z)
   result.m02 = (xz - (cos * xz)) - (sin * axis.y)
   result.m10 = (xy - (cos * xy)) - (sin * axis.z)
-  result.m11 = yy + (cos * (1.0f - yy))
+  result.m11 = yy + (cos * (1.T - yy))
   result.m12 = (yz - (cos * yz)) + (sin * axis.x)
   result.m20 = (xz - (cos * xz)) + (sin * axis.y)
   result.m21 = (yz - (cos * yz)) - (sin * axis.x)
-  result.m22 = zz + (cos * (1.0f - zz))
-  result.m33 = 1
+  result.m22 = zz + (cos * (1.T - zz))
+  result.m33 = 1.T
 
 func rotationX*[T](angle: T): Matrix[T, 4, 4] =
-  return rotationAxis(Vector[T, 3](1, 0, 0), angle)
+  rotationAxis(Vector[T, 3].unitX, angle)
 
 func rotationY*[T](angle: T): Matrix[T, 4, 4] =
-  return rotationAxis(Vector[T, 3](0, 1, 0), angle)
+  rotationAxis(Vector[T, 3].unitY, angle)
 
 func rotationZ*[T](angle: T): Matrix[T, 4, 4] =
-  return rotationAxis(Vector[T, 3](0, 0, 1), angle)
+  rotationAxis(Vector[T, 3].unitZ, angle)
 
 func rotationYawPitchRoll*[T](yaw, pitch, roll: T): Matrix[T, 4, 4] =
-  return rotationZ(roll) * rotationX(pitch) * rotationY(yaw)
+  rotationZ(roll) * rotationX(pitch) * rotationY(yaw)
 
-static:
+func rotationQuaternion*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
+  let
+    xx = rotation.x * rotation.x
+    yy = rotation.y * rotation.y
+    zz = rotation.z * rotation.z
+    xy = rotation.x * rotation.y
+    zw = rotation.z * rotation.w
+    zx = rotation.z * rotation.x
+    yw = rotation.y * rotation.w
+    yz = rotation.y * rotation.z
+    xw = rotation.x * rotation.w
+
+  result.m00 = 1.T - (2.T * (yy + zz))
+  result.m01 = 2.T * (xy + zw)
+  result.m02 = 2.T * (zx - yw)
+  result.m10 = 2.T * (xy - zw)
+  result.m11 = 1.T - (2.T * (zz + xx))
+  result.m12 = 2.T * (yz + xw)
+  result.m20 = 2.T * (zx + yw)
+  result.m21 = 2.T * (yz - xw)
+  result.m22 = 1.T - (2.T * (yy + xx))
+  result.m33 = 1.T
+
+func perspectiveOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
+
+  let zRange = far / (far - near)
+
+  result.m00 = 2.T * near / (right - left)
+  result.m11 = 2.T * near / (top - bottom)
+  result.m20 = -(left + right) / (left - right)
+  result.m21 = -(top + bottom) / (bottom - top)
+  result.m22 = -zRange
+  result.m23 = -1.T
+  result.m32 = -near * zRange
+
+func perspectiveFov*[T](fov, aspect, near, far: T): Matrix[T, 4, 4] =
+  let
+    yScale = 1.T / tan(fov * (T)0.5)
+    xScale = yScale / aspect
+
+    halfWidth = near / xScale
+    halfHeight = near / yScale
+  
+  return perspectiveOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far)
+
+func orhographicOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
+
+  let zRange = 1.T / (far - near)
+  result.m00 = 2.T / (right - left)
+  result.m11 = 2.T / (top - bottom)
+  result.m22 = -zRange
+  result.m30 = (left + right) / (left - right)
+  result.m31 = (top + bottom) / (bottom - top)
+  result.m32 = -near * zRange
+  result.m33 = 1.T
+
+func orhographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
+  let
+    halfWidth = (T)0.5 * width
+    halfHeight = (T)0.5 * height
+
+  return orhographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
+
+func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
+
+  let
+    zAxis = (eye - target).normalized
+    xAxis = cross(up, zAxis).normalized
+    yAxis = cross(zAxis, xAxis)
+    
+  result.m00m10m20 = xAxis
+  result.m01m11m21 = yAxis
+  result.m02m12m22 = zAxis
+
+  result.m30 = -dot(xAxis, eye)
+  result.m31 = -dot(yAxis, eye)
+  result.m32 = -dot(zAxis, eye)
+  result.m33 = 1.T
+
+func all*[width: static[int]](value: Vector[bool, width]): bool =
+  for element in value.elements:
+    if not element:
+      return false
+  return true
+
+func any*[width: static[int]](value: Vector[bool, width]): bool =
+  for element in value.elements:
+    if element:
+      return true
+  return false
+
+func `not`*[width: static[int]](value: Vector[bool, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = not value[i]
+
+func `==`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] == right[i]
+
+func `<=`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] <= right[i]
+
+func `<`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] < right[i]
+
+func `and`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] and right[i]
+
+func `or`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] and right[i]
+
+func `xor`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+  for i in 0 ..< width:
+    result[i] = left[i] xor right[i]
+
+func select*[T; width: static[int]](condition: Vector[bool, width]; a, b: Vector[T, width]): Vector[T, width] =
+  for i in 0 ..< width:
+    result[i] = if condition[i]: a[i] else: b[i]
+
+when isMainModule:
   var v: Vector[float, 4] = [1.0, 2.0, 3.0, 4.0].toVector
   var a, b, c, d: Vector3
   var w: Vector[float, 2] = [5.0, 6.0].toVector
@@ -476,9 +650,11 @@ static:
   m[1, 2] = 10.0f
   echo m.m21m31
   
-  # echo m * n
-  # echo m.transformCoordinate(a)
-    
+  echo m * n
+
+  let q = rotationAxisQuaternion(Vector3.unitX, PI/2)
+  echo Vector3.unitY.transform(q)
+
 type
   Color3* = distinct Vector3
 
@@ -510,6 +686,14 @@ type
     position*: Vector3
     direction*: Vector3
 
+  RayHit* = object
+    normal*: Vector3
+    distance*: float32
+
+  RigidPose* = object
+    position*: Vector3
+    orientation*: Quaternion
+
   PlaneIntersectionType* {.pure.} = enum
     Back,
     Front,
@@ -525,7 +709,35 @@ type
     distance*: float
 
   CubeFace* {.pure.} = enum
-    Right, Left, Top, Bottom, Far, Near
+    Right, Left, Top, Bottom, Near, Far
 
   BoundingFrustum* = object
     planes*: array[CubeFace, Plane]
+
+func normal*(face: CubeFace): Vector3 =
+  case face:
+    of Right: Vector3.unitX
+    of Left: -Vector3.unitX
+    of Top: Vector3.unitY
+    of Bottom: -Vector3.unitY
+    of Near: Vector3.unitZ
+    of Far: -Vector3.unitZ
+
+func center*(self: BoundingBox): Vector3 =
+  (self.maximum + self.minimum) * 0.5f
+
+func extent*(self: BoundingBox): Vector3 =
+  self.maximum - self.minimum
+
+func merge*(first, second: BoundingBox): BoundingBox =
+  result.minimum = min(first.minimum, second.minimum)
+  result.maximum = max(first.maximum, second.maximum)
+
+func contains*(frustum: BoundingFrustum; box: BoundingBox): bool =
+  for plane in frustum.planes:
+    if dot(box.center, plane.normal) + dot(box.extent, abs(plane.normal)) <= -plane.distance:
+      return false
+  return true
+
+func contains*(box: BoundingBox; point: Vector3): bool =
+  all(box.minimum <= point and box.maximum >= point)

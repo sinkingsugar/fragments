@@ -1,5 +1,8 @@
 import math, bitops, random
 
+func abs*(value: float32): float32 =
+  if value < 0: -value else: value
+
 func lerp*(min, max, amount: SomeFloat): SomeFloat =
   return min + (max - min) * amount
 
