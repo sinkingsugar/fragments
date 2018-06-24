@@ -51,6 +51,35 @@ else:
         str = $file
       
       result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("compile"), newLit(str)))
+      
+  macro cpplibpaths*(paths: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for path in paths:
+      var str: string
+      when defined windows:
+        let win_path = ($path).replace("/", "\\")
+        when defined vcc:
+          str = "/LIBPATH:" & win_path
+        else:
+          str = "-L" & win_path
+      else:
+        str = "-L" & $path
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
+      
+  macro cpplibs*(libs: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for lib in libs:
+      var str: string
+      when defined windows:
+        let win_incl = ($lib).replace("/", "\\") 
+        str = win_incl
+      else:
+        str = $lib
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
 
 var
   mangledNames {. compileTime .} = initTable[string, string]()
@@ -453,6 +482,7 @@ when isMainModule:
   cppdefines("MYDEFINE", "MYDEFINE2=10")
   cppincludes(".")
   cppfiles("MyClass.cpp")
+  cpplibpaths(".")
   
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
