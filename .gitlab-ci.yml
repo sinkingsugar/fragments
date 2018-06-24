@@ -7,7 +7,7 @@ test_ffi_cpp_linux:
   tags:
     - NIM, LINUX
     
- test_ffi_cpp_win:
+test_ffi_cpp_win:
   script:
     - nim cpp --cincludes:. -r core/ffi/cpp.nim
   tags:
