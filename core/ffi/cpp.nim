@@ -526,10 +526,10 @@ when isMainModule:
 
       x1.testVir3(11).to(void)
 
-      var subx1 = cppinit(MyOwnClass2)
-      echo $subx1.test20(1).to(cint)
+      # var subx1 = cppinit(MyOwnClass2)
+      # echo $subx1.test20(1).to(cint)
 
-      subx1.testVir3(11).to(void)
-      subx1.testVir4(11).to(void)
+      # subx1.testVir3(11).to(void)
+      # subx1.testVir4(11).to(void)
 
     run()
