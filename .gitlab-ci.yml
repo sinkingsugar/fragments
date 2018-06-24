@@ -15,6 +15,6 @@ test_ffi_cpp_win_gcc:
     
 test_ffi_cpp_win_vcc:
   script:
-    - nim cpp -cc:vcc --cincludes:. -r core/ffi/cpp.nim
+    - nim cpp --cc:vcc --cincludes:. -r core/ffi/cpp.nim
   tags:
     - NIM, WIN10
