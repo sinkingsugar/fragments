@@ -16,7 +16,7 @@ else:
     
     for adefine in defines:
       var str: string
-      when defined windows:
+      when defined(windows) and defined(vcc):
         str = "/D" & $adefine
       else:
         str = "-D" & $adefine
@@ -29,8 +29,11 @@ else:
     for incl in includes:
       var str: string
       when defined windows:
-        let win_incl = ($incl).replace("/", "\\") 
-        str = "/I" & win_incl
+        let win_incl = ($incl).replace("/", "\\")
+        when defined vcc:
+          str = "/I" & win_incl
+        else:
+          str = "-I" & win_incl
       else:
         str = "-I" & $incl
       

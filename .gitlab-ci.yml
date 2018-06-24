@@ -7,8 +7,14 @@ test_ffi_cpp_linux:
   tags:
     - NIM, LINUX
     
-test_ffi_cpp_win:
+test_ffi_cpp_win_gcc:
   script:
     - nim cpp --cincludes:. -r core/ffi/cpp.nim
+  tags:
+    - NIM, WIN10
+    
+test_ffi_cpp_win_vcc:
+  script:
+    - nim cpp -cc:vcc --cincludes:. -r core/ffi/cpp.nim
   tags:
     - NIM, WIN10
