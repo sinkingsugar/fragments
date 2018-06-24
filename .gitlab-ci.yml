@@ -1,0 +1,14 @@
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  
+test_ffi_cpp_linux:
+  script:
+    - nim cpp --cincludes:. -r core/ffi/cpp.nim
+  tags:
+    - NIM, LINUX
+    
+ test_ffi_cpp_win:
+  script:
+    - nim cpp --cincludes:. -r core/ffi/cpp.nim
+  tags:
+    - NIM, WIN10
