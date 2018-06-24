@@ -9,6 +9,45 @@ type
 
 when defined(js):
   type WasmPtr* = distinct int
+else:
+  # compiler utilities
+  macro cppdefines*(defines: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for adefine in defines:
+      var str: string
+      when defined windows:
+        str = "/D" & $adefine
+      else:
+        str = "-D" & $adefine
+        
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passC"), newLit(str)))
+      
+  macro cppincludes*(includes: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for incl in includes:
+      var str: string
+      when defined windows:
+        let win_incl = ($incl).replace("/", "\\") 
+        str = "/I" & win_incl
+      else:
+        str = "-I" & $incl
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passC"), newLit(str)))
+      
+  macro cppfiles*(files: varargs[string]): untyped =
+    result = nnkStmtList.newTree()
+    
+    for file in files:
+      var str: string
+      when defined windows:
+        let win_incl = ($file).replace("/", "\\") 
+        str = win_incl
+      else:
+        str = $file
+      
+      result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("compile"), newLit(str)))
 
 var
   mangledNames {. compileTime .} = initTable[string, string]()
@@ -407,6 +446,10 @@ when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
   
+  cppdefines("MYDEFINE", "MYDEFINE2=10")
+  cppincludes(".")
+  cppfiles("MyClass.cpp")
+  
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
   defineCppSubType(MyOwnClass2, MyClass2, "MyClass2"):
@@ -419,7 +462,7 @@ when isMainModule:
 
   # expandMacros:
   # dumpAstGen:
-  when true:
+  when true: 
     proc run() =
       var x = cppinit(MyClass, 1)
       var y = cast[ptr MyClass](alloc0(sizeof(MyClass)))
