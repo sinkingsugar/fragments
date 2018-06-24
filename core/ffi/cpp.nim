@@ -1,6 +1,6 @@
 {.experimental.}
 
-import macros, tables
+import macros, tables, strutils
 
 type
   CppProxy* {.nodecl.} = object
