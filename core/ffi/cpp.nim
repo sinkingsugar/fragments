@@ -120,6 +120,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
 template cppOverride*(str: string) {.pragma, used.}
 template cppCall*(str: string) {.pragma, used.}
 
+# to be improved
 macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, procs: untyped): untyped =
   result = nnkStmtList.newTree()
 
@@ -455,6 +456,8 @@ when isMainModule:
   
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
+  
+  #[ to be improved
   defineCppSubType(MyOwnClass2, MyClass2, "MyClass2"):
     proc testVir(): cint {.cppOverride:"int testVir()", cppCall:"".} =
       return 22
@@ -462,6 +465,7 @@ when isMainModule:
       return i + 22
     proc testVir3(i: cint) {.cppOverride:"void testVir3(int i)", cppCall:",i".} =
       echo i + 22
+  ]#
 
   # expandMacros:
   # dumpAstGen:
