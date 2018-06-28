@@ -71,8 +71,6 @@ type
     references: seq[pointer]
     ids: Table[pointer, int]
 
-  Serializer = ref object of RootObj
-
   # TODO: Override with shallow pragma?
   Blittable* = concept type T
     T.isBlittable
@@ -84,8 +82,8 @@ type
       Derived = object of Base
 
   Serializable* = concept v, var m
-    v.serialize(SerializationContext)
-    m.deserialize(SerializationContext)
+    v.serializeValue(SerializationContext)
+    m.deserializeValue(SerializationContext)
 
 proc newSerializationContext*(stream: Stream): SerializationContext =
   new(result)
@@ -93,29 +91,10 @@ proc newSerializationContext*(stream: Stream): SerializationContext =
   result.references = @[]
   result.ids = initTable[pointer, int]()
 
-method serialize*(self: Serializer; instance: ref RootObj; context: SerializationContext) {.base.} = discard
-  
-method deserialize*(self: Serializer; instance: var ref RootObj; context: SerializationContext) {.base.} = discard
+var serializableTypes {.compileTime.} = newSeq[tuple[serializable, serialize, deserialize: NimNode]]()
 
-macro declareObjectSerializer*(t: typedesc): untyped =
-  let
-    context = ident"context"
-    value = ident"value"
-
-  result = quote do:
-    type noref = type((
-      block:
-        var x: `t`
-        when compiles(x[]):
-          x[]
-        else:
-          x
-    ))
-    proc serialize*(`value`: noref; `context`: SerializationContext)
-    proc deserialize*(`value`: var noref; `context`: SerializationContext)
-
-macro generateObjectSerializer*(t: typedesc): untyped =
-  var typeDef = t.getTypeInst[1].getTypeInst().getImpl()
+proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deserialize: NimNode] {.compileTime.} =
+  var typeDef = t.getTypeInst().getImpl()
 
   let isRef = typeDef[2].kind in {nnkRefTy, nnkPtrTy}
   if isRef and typeDef[2][0].kind in {nnkSym, nnkBracketExpr}:
@@ -124,6 +103,10 @@ macro generateObjectSerializer*(t: typedesc): untyped =
     typeDef = if isRef: typeDef[2][0] else: typeDef[2]
 
   let fieldDefs = if typeDef.kind == nnkObjectTy: typeDef[2] else: typeDef
+
+  for serializer in serializableTypes:
+    if t.sameType(serializer.serializable):
+      return (nil, serializer.serialize, serializer.deserialize)
 
   let
     context = ident"context"
@@ -162,27 +145,57 @@ macro generateObjectSerializer*(t: typedesc): untyped =
         serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
         deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
 
-  result = quote do:
+  let
+    serializeSym = genSym(nskProc)
+    deserializeSym = genSym(nskProc)
+
+  serializableTypes.add((t.getTypeInst(), serializeSym, deserializeSym))
+
+  result.serialize = serializeSym
+  result.deserialize = deserializeSym
+  result.declaration = quote do:
     type noref = type((
       block:
-        var x: `t`
+        var x: type(`t`)
         when compiles(x[]):
           x[]
         else:
           x
     ))
-    proc serialize*(`value`: noref; `context`: SerializationContext) = `serializers`
-    proc deserialize*(`value`: var noref; `context`: SerializationContext) = `deserializers`
+    proc `serializeSym`(`value`: noref; `context`: SerializationContext) = `serializers`
+    proc `deserializeSym`(`value`: var noref; `context`: SerializationContext) = `deserializers`
+
+template serialize*(value: Serializable; context: SerializationContext): untyped =
+  serializeValue(value, context)
+
+template deserialize*(value: var Serializable; context: SerializationContext): untyped =
+  deserializeValue(value, context)
+
+macro serialize*(value: not Serializable; context: SerializationContext): untyped =
+  let (declaration, serialize, _) = generateObjectSerializer(value)
+  result = newStmtList()
+  if declaration != nil:
+    result.add(declaration)
+  result.add quote do:
+    `serialize`(`value`, `context`)
+
+macro deserialize*[T: not Serializable](value: var T; context: SerializationContext): untyped =
+  let (declaration, _, deserialize) = generateObjectSerializer(value)
+  result = newStmtList()
+  if declaration != nil:
+    result.add(declaration)
+  result.add quote do:
+    `deserialize`(`value`, `context`)
 
 # Options
-proc serialize*(value: Option[Serializable]; context: SerializationContext) =
+proc serializeValue*[T](value: Option[T]; context: SerializationContext) =
   if value.isNone:
     context.stream.write(false)
   else:
     context.stream.write(true)
     value.get().serialize(context)
 
-proc deserialize*[T: Serializable](value: var Option[T]; context: SerializationContext) =
+proc deserializeValue*[T](value: var Option[T]; context: SerializationContext) =
   let isSome = context.stream.readBool()
   if isSome:
     var temp: T
@@ -203,7 +216,7 @@ proc getRefFromId*[T](self: SerializationContext; id: int): ref T =
   cast[ref T](self.references[id])
 
 # Refs
-proc serialize*(value: ref Serializable; context: SerializationContext) =
+proc serializeValue*[T](value: ref T; context: SerializationContext) =
   if value == nil:
     context.stream.write(ReferenceSerializationKind.Nil)
   else:
@@ -215,14 +228,14 @@ proc serialize*(value: ref Serializable; context: SerializationContext) =
       context.stream.write(ReferenceSerializationKind.Value)
       context.registerRef(value)
 
-      when Serializable is Inheritable: discard
+      when T is Inheritable: discard
         #let typeInfo = getTypeDescription(Serializable)
         #let serializer = context.getSerializer(typeInfo)
         #serializer.serialize(value, context)
       else:
         serialize(value[], context)     
 
-proc deserialize*[T: Serializable](value: var ref T; context: SerializationContext) =
+proc deserializeValue*[T](value: var ref T; context: SerializationContext) =
   let kind = context.stream.readInt8().ReferenceSerializationKind
   case kind:
     of ReferenceSerializationKind.Nil:
@@ -241,21 +254,21 @@ proc deserialize*[T: Serializable](value: var ref T; context: SerializationConte
         deserialize(value[], context)  
 
 # Blittable
-proc serialize*(value: Blittable; context: SerializationContext) =
+proc serializeValue*(value: Blittable; context: SerializationContext) =
   context.stream.write(value)
 
-proc deserialize*[T: Blittable](value: var T; context: SerializationContext) =
+proc deserializeValue*[T: Blittable](value: var T; context: SerializationContext) =
   #context.stream.read(value) # Internal
   if context.stream.readData(addr(value), sizeof(T)) != sizeof(T):
     raise newException(IOError, "cannot read from stream")
 
 # Lists
-proc serialize*[T: Serializable](collection: seq[T]; context: SerializationContext) =
+proc serializeValue*[T](collection: seq[T]; context: SerializationContext) =
   context.stream.writePackedInt(collection.len)
   for item in collection:
     item.serialize(context)
 
-proc deserialize*[T: Serializable](collection: var seq[T]; context: SerializationContext) =
+proc deserializeValue*[T](collection: var seq[T]; context: SerializationContext) =
   # TODO: seq[Blittable]
   let count = context.stream.readPackedInt()
   newSeq(collection, count)
@@ -263,12 +276,12 @@ proc deserialize*[T: Serializable](collection: var seq[T]; context: Serializatio
     deserialize(index, context)
 
 # Strings
-proc serialize*(value: string; context: SerializationContext) =
+proc serializeValue*(value: string; context: SerializationContext) =
   context.stream.writePackedInt(value.len)
   if value.len > 0:
     context.stream.write(value)
 
-proc deserialize*(value: var string; context: SerializationContext) =
+proc deserializeValue*(value: var string; context: SerializationContext) =
   let length = context.stream.readPackedInt()
   if length > 0:
     value = context.stream.readStr(length.int)
@@ -337,11 +350,6 @@ when isMainModule:
     r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))
     r2 = Test()
   r1.p[] = 3.0
-
-  declareObjectSerializer(Test)
-
-  generateObjectSerializer(Test2)
-  generateObjectSerializer(Test)
 
   var context = newSerializationContext(stream)
   context.stream = stream
