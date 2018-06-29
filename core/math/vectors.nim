@@ -1,46 +1,127 @@
 import macros, strutils, typetraits, tables
 
 type
-  Wide*[T] = object
+  Wide*[T; width: static[int]] = object
+    ## A super-scaler primitive type, used in vectorized code
     elements*: array[4, T]
 
-  SuperScalar* = concept v, type V
+  SomeWide* = concept v, var m, type V
+    ## The contract for super-scalar versions of complex types
     type T = V.scalarType
     const width: int = V.laneCount
     v.getLane(int) is T
-    v.setLane(int, T)
+    m.setLane(int, T)
+
+  SomeVector* = concept type T of SomeWide
+    ## A wide type marked as vector. Vectors automatically support some basic operations.
+    T.isVector()
+
+template restrict*(arg: untyped): untyped =
+  when defined(vcc):
+    let `arg` {.inject, codegenDecl: "$# __restrict $#".} = unsafeaddr `arg`
+  else:
+    let `arg` {.inject, codegenDecl: "$# __restrict__ $#".} = unsafeaddr `arg`
+
+# Helpers for mapping scalar operations to wide types
+template mapInline*[T: SomeWide](value: T, op: untyped): untyped =
+  restrict(value)
+  for i in 0 ..< T.laneCount():
+    result.setLane(i, op(value.getLane(i)))
+
+template mapInlineBinary*[T: SomeWide](left, right: T, op: untyped): untyped =
+  restrict(left)
+  restrict(right)
+  for i in 0 ..< T.laneCount():
+    result.setLane(i, op(left.getLane(i), right.getLane(i)))
+
+template makeUniversal*(T: typedesc, op: untyped): untyped =
+  func op*[U: T](value: U): U {.noinit, inline.} =
+    mapInline(value, op)
+
+template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
+  func op*[U: T](left, right: U): U {.noinit, inline.} =
+    mapInlineBinary(left, right, op)
+
+# Mark the basic wide type as vector
+template isVector*(_: typedesc[Wide]): bool = true
+
+# Supported operations for all types marked as vector
+makeUniversal(SomeVector, `-`)
+makeUniversalBinary(SomeVector, `+`)
+makeUniversalBinary(SomeVector, `-`)
+makeUniversalBinary(SomeVector, `*`)
+makeUniversalBinary(SomeVector, `/`)
+
+makeUniversal(SomeVector, `not`)
+makeUniversalBinary(SomeVector, `and`)
+makeUniversalBinary(SomeVector, `or`)
+makeUniversalBinary(SomeVector, `xor`)
+
+makeUniversal(SomeVector, abs)
+makeUniversalBinary(SomeVector, clamp)
+
+# These cannot be defined using the concept, since they would conflict with the generic version in the system module
+makeUniversalBinary(Wide, min)
+makeUniversalBinary(Wide, max)
+
+func `*` *[T: SomeVector](left: T; right: T.T): T =
+  restrict(left)
+  for i in 0 ..< T.laneCount():
+    result.setLane(i, left.getLane(i) * right)
+
+template `/` *[T: SomeVector](left: T; right: T.T): T =
+  left * (T.T)1 / right
+
+template `+=` *(left: var SomeVector; right: SomeVector) = left = left + right
+template `-=` *(left: var SomeVector; right: SomeVector) = left = left - right
+template `*=` *(left: var SomeVector; right: SomeVector) = left = left * right
+template `/=` *(left: var SomeVector; right: SomeVector) = left = left / right
+
+template `*=` *(left: var SomeVector; right: SomeVector.T) = left = left * right
+template `/=` *(left: var SomeVector; right: SomeVector.T) = left = left / right
 
 # Vectorized version of primitive types
-template scalarType*[T](t: typedesc[Wide[T]]): typedesc = T
-template laneCount*[T](t: typedesc[Wide[T]]): int = 4
+template scalarType*[T; width: static[int]](t: typedesc[Wide[T, width]]): typedesc = T
+template laneCount*[T; width: static[int]](t: typedesc[Wide[T, width]]): int = width
 func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
 func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
 
 # Vectorized version of arrays
-template scalarType*[size: static[int]](t: typedesc[array[size, SuperScalar]]): typedesc = array[size, SuperScalar.T]
-template laneCount*[size: static[int]](t: typedesc[array[size, SuperScalar]]): int = SuperScalar.width
-func getLane*[size: static[int]; S: SuperScalar](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
+template scalarType*[size: static[int]](t: typedesc[array[size, SomeWide]]): typedesc = array[size, SomeWide.T]
+template laneCount*[size: static[int]](t: typedesc[array[size, SomeWide]]): int = SomeWide.width
+func getLane*[size: static[int]; S: SomeWide](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
   for i in 0..<size:
     result[i] = wide[i].getLane(laneIndex)
-func setLane*[size: static[int]; S: SuperScalar](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
+func setLane*[size: static[int]; S: SomeWide](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
   for i in 0..<size:
     wide[i].setLane(laneIndex, value[i])
 
 # Common operations on vectorized types
-func gather*(wide: var SuperScalar; args: varargs[SuperScalar.T]) =
+func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) =
   for laneIndex, value in pairs(args):
     wide.setLane(laneIndex, value)
 
-func scatter*(wide: SuperScalar; args: var openarray[SuperScalar.T]) =
+func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) =
   # var varargs is not supported
   for laneIndex, value in mpairs(args):
     value = wide.getLane(laneIndex)
 
-iterator lanes(wide: SuperScalar): SuperScalar.T =
-  for laneIndex in 0..<SuperScalar.width:
+func broadcast*(wide: var SomeWide; value: SomeWide.T) =
+  for laneIndex in 0 ..< SomeWide.width:
+    wide.setLane(laneIndex, value)
+
+iterator lanes*(wide: SomeWide): SomeWide.T =
+  for laneIndex in 0..<SomeWide.width:
     yield wide.getLane(laneIndex)
 
-var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar, wide: NimNode]]()
+# Indexing of wide types
+func `[]`*(wide: Wide; index: int): Wide.T =
+  wide.getLane(index)
+
+func `[]=`*(wide: Wide; index: int; value: Wide.T) =
+  wide.setLane(index, value)
+
+var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar: NimNode; width: int; wide: NimNode]]()
 
 proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[NimNode]): NimNode {.compileTime.} =
   
@@ -59,7 +140,8 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
       case T.kind:
         of nnkSym:
           for vectorizedType in vectorizedTypes:
-            if T.sameType(vectorizedType.scalar):
+            if T.sameType(vectorizedType.scalar) and
+              vectorizedType.width == 4:
             #if T == vectorizedType.scalar:
               return vectorizedType.wide
 
@@ -72,7 +154,7 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
             resultSym = ident("result")
             valueSym = ident("value")
 
-          let scalarTypeDefinition = T.symbol.getImpl()
+          let scalarTypeDefinition = T.getImpl()
 
           # Iterate field declarations of the scalar type
           for fieldDefs in scalarTypeDefinition[2][2]:
@@ -112,9 +194,9 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
           # Create a new symbol for the type and add it to the list
           # of known vectorized types
           var symbol = genSym(nskType)
-          vectorizedTypes.add((T, symbol))
+          vectorizedTypes.add((T, 4, symbol))
 
-          # Satisfy the SuperScalar concept and generate lane accessors
+          # Satisfy the SomeWide concept and generate lane accessors
           generatedProcs.add(quote do:
             template scalarType*(t: typedesc[`symbol`]): typedesc = `T`
             template laneCount*(t: typedesc[`symbol`]): int = 4
@@ -138,9 +220,11 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
         else: discard
    
     else:
-      let name = ident($T)
+      let
+        name = ident($T)
+        width = 4
       return quote do:
-        Wide[`name`]
+        Wide[`name`, `width`]
         #Wide[`T`]
         #array[4, `T`]
 
@@ -154,18 +238,24 @@ proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
   result.add(rootType)
 
 macro wide*(T: typedesc): untyped =
+  ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   T.getType().makeWideTypeImpl()
 
-static:
+when isMainModule:
   # Test super scalar concept
   var f1, f2, f3: float
-  var fa: array[Wide[float].laneCount, float]
+  var fa: array[4, float]
   f1 = 1.0
-  var w: Wide[float]
-  w.gather(f3, f2, f1)
+  var w, v: Wide[float, 4]
+  w.broadcast(f1)
+  echo w.getLane(1)
+  echo w[1]
+  w.gather(f3, f2, 2.0)
   w.scatter(fa)
   echo fa[2]
   for x in w.lanes: discard
+
+  echo w + v
 
   # Test primitive type vectorization
   echo (wide float).name
@@ -180,7 +270,7 @@ static:
     Bar = object
       value*: uint64
 
-    Foo {.importc.} = object
+    Foo = object
       value*, value2: int
       fValue* : float
       #tValue*: Time

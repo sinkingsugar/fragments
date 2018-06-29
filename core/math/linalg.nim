@@ -2,29 +2,32 @@ import math, macros, strutils, vectors, common
   
 {.experimental.}
 
-const
-  DefaultVectorSize = 4
+# {.emit: """/*TYPESECTION*/
+# template<typename T, int I>
+# using Vector = T __attribute__((ext_vector_type(I)));
+# """.}
+
+# {.passC: "-I" & staticExec("echo $PWD").}
 
 type
   Half* = distinct uint16
   
   float16* = Half
 
+  #Vector* {.importcpp: "Vector<'0, '1>", header: "linearAlgebra.h".} [T; size: static[int]] = object
   Vector*[T; size: static[int]] = object
     elements: array[size, T]
 
   Matrix*[T; height, width: static[int]] = object
     elements: array[width * height, T]
 
-  Wide = Vector[float32, DefaultVectorSize]
-
   # Common vector types
   Vector2* = Vector[float32, 2]
   Vector3* = Vector[float32, 3]
   Vector4* = Vector[float32, 4]
-  Vector2Wide* = Vector[Wide, 2]
-  Vector3Wide* = Vector[Wide, 2]
-  Vector4Wide* = Vector[Wide, 2]
+  Vector2Wide* = wide Vector2
+  Vector3Wide* = wide Vector3
+  Vector4Wide* = wide Vector4
 
   Half2* = Vector[Half, 2]
   Half3* = Vector[Half, 3]
@@ -42,7 +45,7 @@ type
   QuaternionBase*[T] = object
     elements: array[4, T]
   Quaternion* = QuaternionBase[float32]
-  QuaternionWide* = QuaternionBase[Wide]
+  QuaternionWide* = wide Quaternion
 
   # Common matrix types
   Matrix2x2* = Matrix[float32, 2, 2]
@@ -50,30 +53,23 @@ type
   Matrix3x3* = Matrix[float32, 3, 3]
   Matrix4x3* = Matrix[float32, 4, 3]
   Matrix4x4* = Matrix[float32, 4, 4]
-
-  SquareMatrix*[T; size: static[int]] = concept v
-    v is Matrix[T, size, size]
+  Matrix4x4Wide = wide Matrix4x4
 
   NonScalar*[T] = concept v, var m
     v.elements[int] is T
     m.elements[int] = T
     v.elements.len is int
 
-template mapInline*[T; size: static[int]](value: Vector[T, size], op: untyped): untyped =
-  for i in 0 ..< size:
-    result[i] = op(value[i])  
+# Vectorized version of primitive types
+template scalarType*[T; width: static[int]](t: typedesc[Vector[T, width]]): typedesc = T
+template laneCount*[T; width: static[int]](t: typedesc[Vector[T, width]]): int = width
+func getLane*(wide: Vector; laneIndex: int): Vector.T {.inline.} = wide.elements[laneIndex]
+func setLane*(wide: var Vector; laneIndex: int; value: Vector.T) {.inline.} = wide.elements[laneIndex] = value
+template isVector*(_: typedesc[Vector]): bool = true
 
-template mapInlineBinary*[T; size: static[int]](left, right: Vector[T, size], op: untyped): untyped =
-  for i in 0 ..< size:
-    result[i] = op(left[i], right[i])  
-
-template makeUniversal*(op: untyped): untyped =
-  func op*(value: Vector): Vector {.noinit.} =
-    mapInline(value, op)
-
-template makeUniversalBinary*(op: untyped): untyped =
-  func op*(left, right: Vector): Vector {.noinit.} =
-    mapInlineBinary(left, right, op)
+# These cannot be defined using the concept, since they would conflict with the generic version in the system module
+makeUniversalBinary(Vector, min)
+makeUniversalBinary(Vector, max)
 
 # converter toVector[T; size: static[int]](value: T): Vector[T, size] =
 #   for i in 0..<size:
@@ -270,33 +266,6 @@ func unitY*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
 func unitZ*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
   result.z = 1.T
 
-# Vector addition
-func `+` *[T; w: static[int]](left, right: Vector[T, w]): Vector[T, w] =
-  for i in 0..<w:
-    result[i] = left[i] + right[i]
-
-func `-` *(self: Vector): Vector =
-  for i in 0..<Vector.size:
-    result[i] = -self[i]
-
-template `-` *(left, right: Vector): Vector =
-  left + -right
-
-template `+=` *(left: var Vector; right: Vector) =
-  left = left + right
-
-template `-=` *(left: var Vector; right: Vector) =
-  left = left - right
-  
-# TODO: Somehow causes conflict with `.` operator
-# func `/` *(left: Vector; right: Vector.T): Vector =
-func `*` *[T; width: static[int]](left: Vector[T, width]; right: T): Vector[T, width] =
-  for i in 0..<width:
-    result[i] = left[i] * right
-
-template `/` *(left: Vector; right: Vector.T): Vector =
-  left * (Vector.T)1 / right
-
 func `*` *[T](left: QuaternionBase[T]; right: T): QuaternionBase[T] =
   for i in 0..<4:
     result[i] = left[i] * right
@@ -304,15 +273,9 @@ func `*` *[T](left: QuaternionBase[T]; right: T): QuaternionBase[T] =
 template `/` *(left: QuaternionBase; right: QuaternionBase.T): QuaternionBase =
   left * (QuaternionBase.T)1 / right
 
-func `*` *(left, right: Vector): Vector =
-  for i in 0..<Vector.size:
-    result[i] = left[i] * right[i]
-
-func `/` *(left, right: Vector): Vector =
-  for i in 0..<Vector.size:
-    result[i] = left[i] / right[i]
-
 func dot*(left, right: Vector): Vector.T =
+  restrict(left)
+  restrict(right)
   for i in 0..<Vector.size:
     result += left[i] * right[i]
 
@@ -351,12 +314,6 @@ func normalized*(self: QuaternionBase): QuaternionBase =
   else:
     return self
 
-makeUniversal(abs)
-makeUniversal(clamp)
-makeUniversal(saturate)
-makeUniversalBinary(min)
-makeUniversalBinary(max)
-
 func lerp*(min, max: Vector; amount: Vector.T): Vector =
   for i in 0..<Vector.size:
     result[i] = lerp(min[i], max[i], amount)
@@ -385,7 +342,7 @@ func catmullRom*(value1, value2, value3, value4: Vector, amount: Vector.T): Vect
   let factor2 = -3 * cubed + 4 * squared + amount
   let factor3 = cubed - squared
 
-  return (Vector.T)0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
+  return 0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
 
 func barycentric*(value1, value2, value3: Vector; amount1, amount2: Vector.T): Vector =
   return (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
@@ -394,7 +351,7 @@ func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vect
   return (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
 
 func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
-  let invW = 1.T / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
+  let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
 
 func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T, 3] =
@@ -426,7 +383,7 @@ func project*[T](vector: Vector[T, 3]; x, y, width, height, minZ, maxZ: T; world
   result.z = (v.z * (maxZ - minZ)) + minZ
 
 func reflect*[T](vector, normal: Vector[T, 3]): Vector[T, 3] =
-  return vector - normal * 2.T * dot(vector, normal)
+  return vector - normal * 2.T# * dot(vector, normal))
 
 func `*` *(left, right: QuaternionBase): QuaternionBase =
   result.xyz = left.xyz * right.w + right.xyz * left.w + cross(left.xyz, right.xyz)
@@ -448,10 +405,13 @@ func `*` *[T; height, width, count: static[int]](
   right: Matrix[T, count, width]):
   Matrix[T, height, width] =
 
+  restrict(left)
+  restrict(right)
+
   for r in 0..<height:
     for c in 0..<width:
       for i in 0..<count:
-        result[r, c] = result[r, c] + left[r, i] * right[i, c]
+        result[r, c] = result[r, c] + left[][r, i] * right[][i, c]
 
 func translation*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
   result = Matrix[T, 4, 4].identity
@@ -473,15 +433,15 @@ func rotationAxis*[T](axis: Vector[T, 3]; angle: T): Matrix[T, 4, 4] =
     xz = axis.x * axis.z
     yz = axis.y * axis.z
 
-  result.m00 = xx + (cos * (1.T - xx))
+  result.m00 = xx + (cos * (1.0f - xx))
   result.m01 = (xy - (cos * xy)) + (sin * axis.z)
   result.m02 = (xz - (cos * xz)) - (sin * axis.y)
   result.m10 = (xy - (cos * xy)) - (sin * axis.z)
-  result.m11 = yy + (cos * (1.T - yy))
+  result.m11 = yy + (cos * (1.0f - yy))
   result.m12 = (yz - (cos * yz)) + (sin * axis.x)
   result.m20 = (xz - (cos * xz)) + (sin * axis.y)
   result.m21 = (yz - (cos * yz)) - (sin * axis.x)
-  result.m22 = zz + (cos * (1.T - zz))
+  result.m22 = zz + (cos * (1.0f - zz))
   result.m33 = 1.T
 
 func rotationX*[T](angle: T): Matrix[T, 4, 4] =
