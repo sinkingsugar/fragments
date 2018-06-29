@@ -1,10 +1,26 @@
 import macros, strutils, typetraits, tables
+import ../ffi/cpp
+
+when defined(clang):
+  const vectorDef = """
+    template<typename T, int I>
+    using Wide = T __attribute__((ext_vector_type(I)));
+    """
+
+  static: writeFile("vector.h", vectorDef)
+
+  cppincludes(".")
+
+  type 
+    Wide* {.importcpp: "Wide<'0, '1>", header: "vector.h".} [T; width: static[int]] = object
+
+else:
+  type
+    Wide*[T; width: static[int]] = object
+      ## A super-scaler primitive type, used in vectorized code
+      elements*: array[4, T]
 
 type
-  Wide*[T; width: static[int]] = object
-    ## A super-scaler primitive type, used in vectorized code
-    elements*: array[4, T]
-
   SomeWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
     type T = V.scalarType
@@ -83,8 +99,12 @@ template `/=` *(left: var SomeVector; right: SomeVector.T) = left = left / right
 # Vectorized version of primitive types
 template scalarType*[T; width: static[int]](t: typedesc[Wide[T, width]]): typedesc = T
 template laneCount*[T; width: static[int]](t: typedesc[Wide[T, width]]): int = width
-func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
-func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
+when defined(clang):
+  func getLane*[T; width: static[int]](wide: Wide[T, width]; laneIndex: int): T {.importcpp: "(#[#])".}
+  func setLane*[T; width: static[int]](wide: var Wide[T, width]; laneIndex: int; value: T) {.importcpp: "(#[#] = #)".}
+else:
+  func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
+  func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
 
 # Vectorized version of arrays
 template scalarType*[size: static[int]](t: typedesc[array[size, SomeWide]]): typedesc = array[size, SomeWide.T]
@@ -97,28 +117,30 @@ func setLane*[size: static[int]; S: SomeWide](wide: array[size, S]; laneIndex: i
     wide[i].setLane(laneIndex, value[i])
 
 # Common operations on vectorized types
-func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) =
+func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) {.inline.} =
+  assert args.len == SomeWide.width
   for laneIndex, value in pairs(args):
     wide.setLane(laneIndex, value)
 
-func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) =
+func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) {.inline.} =
   # var varargs is not supported
+  assert args.len == SomeWide.width
   for laneIndex, value in mpairs(args):
     value = wide.getLane(laneIndex)
 
-func broadcast*(wide: var SomeWide; value: SomeWide.T) =
+func broadcast*(wide: var SomeWide; value: SomeWide.T) {.inline.} =
   for laneIndex in 0 ..< SomeWide.width:
     wide.setLane(laneIndex, value)
 
-iterator lanes*(wide: SomeWide): SomeWide.T =
+iterator lanes*(wide: SomeWide): SomeWide.T {.inline.} =
   for laneIndex in 0..<SomeWide.width:
     yield wide.getLane(laneIndex)
 
 # Indexing of wide types
-func `[]`*(wide: Wide; index: int): Wide.T =
+func `[]`*(wide: Wide; index: int): Wide.T {.inline.} =
   wide.getLane(index)
 
-func `[]=`*(wide: Wide; index: int; value: Wide.T) =
+func `[]=`*(wide: Wide; index: int; value: Wide.T) {.inline.} =
   wide.setLane(index, value)
 
 var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar: NimNode; width: int; wide: NimNode]]()

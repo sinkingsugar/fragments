@@ -2,19 +2,11 @@ import math, macros, strutils, vectors, common
   
 {.experimental.}
 
-# {.emit: """/*TYPESECTION*/
-# template<typename T, int I>
-# using Vector = T __attribute__((ext_vector_type(I)));
-# """.}
-
-# {.passC: "-I" & staticExec("echo $PWD").}
-
 type
   Half* = distinct uint16
   
   float16* = Half
 
-  #Vector* {.importcpp: "Vector<'0, '1>", header: "linearAlgebra.h".} [T; size: static[int]] = object
   Vector*[T; size: static[int]] = object
     elements: array[size, T]
 
