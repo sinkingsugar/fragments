@@ -94,19 +94,30 @@ proc newSerializationContext*(stream: Stream): SerializationContext =
 var serializableTypes {.compileTime.} = newSeq[tuple[serializable, serialize, deserialize: NimNode]]()
 
 proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deserialize: NimNode] {.compileTime.} =
-  var typeDef = t.getTypeInst().getImpl()
+  let typeInst = t.getTypeInst()
 
-  let isRef = typeDef[2].kind in {nnkRefTy, nnkPtrTy}
-  if isRef and typeDef[2][0].kind in {nnkSym, nnkBracketExpr}:
-    typeDef = typeDef[2][0].getImpl()
-  else:
-    typeDef = if isRef: typeDef[2][0] else: typeDef[2]
+  var typeDef = typeInst
 
+  # Type definition
+  if typeDef.kind == nnkSym:
+    typeDef = typeInst.getImpl()
+
+    let isRef = typeDef[2].kind in {nnkRefTy, nnkPtrTy}
+    if isRef and typeDef[2][0].kind in {nnkSym, nnkBracketExpr}:
+      typeDef = typeDef[2][0].getImpl()
+    else:
+      typeDef = if isRef: typeDef[2][0] else: typeDef[2]
+
+    for serializer in serializableTypes:
+      if t.sameType(serializer.serializable):
+        return (nil, serializer.serialize, serializer.deserialize)
+
+  # Anonymous tuple
+  elif typeDef.kind != nnkTupleTy:
+    discard
+
+  # Objects have a record list. Tuples contain ident defs directly.
   let fieldDefs = if typeDef.kind == nnkObjectTy: typeDef[2] else: typeDef
-
-  for serializer in serializableTypes:
-    if t.sameType(serializer.serializable):
-      return (nil, serializer.serialize, serializer.deserialize)
 
   let
     context = ident"context"
@@ -141,7 +152,11 @@ proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deseri
         fieldIdent = fieldIdent[0]
 
       if shouldSerialize:
-        fieldIdent = fieldIdent.basename
+        # Get the field identifier without postfix/pragmas.
+        # In anonymous typles, this is already a symbol.
+        if fieldIdent.kind != nnkSym:
+          fieldIdent = fieldIdent.basename
+
         serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
         deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
 
@@ -272,6 +287,11 @@ proc deserializeValue*[T](collection: var seq[T]; context: SerializationContext)
   # TODO: seq[Blittable]
   let count = context.stream.readPackedInt()
   newSeq(collection, count)
+  # when T.isBlittable():
+  #   let length = sizeof(T) * count
+  #   if context.stream.readData(addr collection[0], length) != length:
+  #     raise newException(IOError, "cannot read from stream")
+  # else:
   for index in mitems(collection):
     deserialize(index, context)
 
@@ -345,11 +365,13 @@ when isMainModule:
       p*: ref float
       t1*: Test3
       t2* {.serializable: false.}: tuple[a: int]
+      t3*: tuple[a: ref float]
 
   var
-    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))
+    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,), t3: (new float,))
     r2 = Test()
   r1.p[] = 3.0
+  r1.t3.a[] = 4.0
 
   var context = newSerializationContext(stream)
   context.stream = stream
