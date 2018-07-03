@@ -129,7 +129,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
   result = nnkStmtList.newTree()
 
   result.add quote do:
-    type `name` {.header: "", importcpp: "", inheritable.} = object
+    type `name`* {.header: "", importcpp: "", inheritable.} = object
 
   if headerStr != nil:
     # replace empty string with proper values
