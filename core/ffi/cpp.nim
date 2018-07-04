@@ -268,9 +268,13 @@ template cppnewptr*(myPtr: ptr CppObject, arg0: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0)
 
-template cppnewptr*(myPtr: ptr CppObject, arg0: typed, arg1: typed): untyped =
+template cppnewptr*(myPtr: ptr CppObject, arg0, arg1: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0, arg1)
+
+template cppnewptr*(myPtr: ptr CppObject, arg0, arg1, arg2: typed): untyped =
+  myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
+  myPtr.cppctor(arg0, arg1, arg2)
 
 proc `+`  *(x, y: CppProxy): CppProxy {.importcpp:"(# + #)".}
 proc `-`  *(x, y: CppProxy): CppProxy {.importcpp:"(# - #)".}
