@@ -17,6 +17,9 @@ for flavor in vsFlavors:
   if existsFile(programFiles & "\\Microsoft Visual Studio\\2017\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"):
     varScript = programFiles & "\\Microsoft Visual Studio\\2017\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"
     break
+  elif existsFile("C:\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"):
+    varScript = "C:\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"
+    break
 
 doAssert(varScript != nil)
 
