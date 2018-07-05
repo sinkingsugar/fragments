@@ -1,5 +1,5 @@
 import cpuinfo
-import locks
+import std/locks
 
 const
   maxSpinCount = 10
