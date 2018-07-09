@@ -26,6 +26,7 @@ doAssert(varScript != nil)
 let 
   buildScript = """
 nim cpp --cc:vcc --cincludes:. -r core/ffi/cpp.nim
+nim c -r core/dsl.nim
 """ % [thisDir(), outputDir]
 
 writeFile("build.bat", buildScript)

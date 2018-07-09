@@ -4,6 +4,7 @@ variables:
 test_ffi_cpp_linux:
   script:
     - nim cpp --cincludes:. -r core/ffi/cpp.nim
+    - nim c -r core/dsl.nim
   tags:
     - NIM, LINUX
     
