@@ -1,6 +1,6 @@
 import macros, tables, sequtils
 
-var customTypes {.compileTime.} = initTable[string, tuple[inherit, procs, methods: NimNode]]()
+var customTypes {.compileTime.} = initTable[string, tuple[inherit, procs, methods: NimNode; contract: string]]()
 
 proc getNodeName(node: NimNode): NimNode =
   case node[0].kind
@@ -35,6 +35,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
     inherit = customTypes[classDefName].inherit
     procs = customTypes[classDefName].procs
     methods = customTypes[classDefName].methods
+    contract = customTypes[classDefName].contract
     selfNode = newIdentNode(className & "_self")
 
   var
@@ -240,6 +241,22 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
   # generate consts
   subresult.add(publicConstants)
 
+  # assert eventual contracts , asserting concepts
+  if contract != "":
+    subresult.add(nnkStaticStmt.newTree(
+      nnkStmtList.newTree(
+        nnkCall.newTree(
+          newIdentNode("doAssert"),
+          nnkInfix.newTree(
+            newIdentNode("is"),
+            newIdentNode(className),
+            newIdentNode(contract)
+          ),
+          newLit(className & " fails to be a " & contract & "'s concept")
+        )
+      )
+    ))
+
   return subresult
 
 macro archetype*(name, definition: untyped): untyped =
@@ -249,6 +266,7 @@ macro archetype*(name, definition: untyped): untyped =
     inherit = newEmptyNode()
     procs = newStmtList()
     methods = newStmtList()
+    contract = ""
 
   for node in definition:
     case node.kind
@@ -257,6 +275,9 @@ macro archetype*(name, definition: untyped): untyped =
         of "super":
           doAssert(node[1].kind == nnkStmtList and node[1][0].kind == nnkIdent, "super needs to be followed by a type name")
           inherit = nnkOfInherit.newTree(node[1][0])
+        of "contract":
+          doAssert(node[1].kind == nnkStmtList and node[1][0].kind == nnkIdent, "contract needs to be followed by a concept name")
+          contract = $node[1][0]
     of nnkProcDef:
       procs.add(node)
     of nnkMethodDef:
@@ -265,7 +286,7 @@ macro archetype*(name, definition: untyped): untyped =
       discard
   
   doAssert(not customTypes.contains(classDefName), classDefName & " already declared!")
-  customTypes.add(classDefName, (inherit, procs, methods))
+  customTypes.add(classDefName, (inherit, procs, methods, contract))
 
   # finally build the actual macro we use to declare our new classes
   result.add quote do:
@@ -278,6 +299,9 @@ when isMainModule:
   type
     MyBase = object of RootObj
       value: string
+    
+    MyConcept = concept x
+      x.value0 is int
 
   method testMethod(b: var MyBase; wow: ref int) {.base.} = echo "Base"
 
@@ -287,6 +311,10 @@ when isMainModule:
     proc run(state: int) {.async.}
     proc stop()
     method testMethod(wow: ref int)
+  
+  archetype contractor:
+    super: MyBase
+    contract: MyConcept
 
   # dumpAstGen:
   #   type
@@ -309,6 +337,9 @@ when isMainModule:
   #     const param0 = 10
     
   #   var x = myConst1
+
+  #   static:
+  #     doAssert(MyEntity is MyConcept, "MyEntity is not MyConcept")
 
   entity MyEntity:
     # {.private.}:
@@ -392,3 +423,12 @@ when isMainModule:
 
   #     testMethod:
   #       echo "LOL"
+
+  contractor MyContractor:
+    value0: int = 10
+    value1: int = 10
+  
+  var c: MyContractor
+  c.value0 = 11
+  c.testMethod(nil)
+  
