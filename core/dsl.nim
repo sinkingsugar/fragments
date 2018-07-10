@@ -95,7 +95,12 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
         # const myConst = 10
         constants.add(nnkConstSection.newTree(
           nnkConstDef.newTree(
-            name,
+            nnkPragmaExpr.newTree(
+              name,
+              nnkPragma.newTree(
+                newIdentNode("used")
+              )
+            ),
             newEmptyNode(),
             node[1][0]
           )
@@ -130,7 +135,12 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
         # const myConst = 10
         constants.add(nnkConstSection.newTree(
           nnkConstDef.newTree(
-            name,
+            nnkPragmaExpr.newTree(
+              name,
+              nnkPragma.newTree(
+                newIdentNode("used")
+              )
+            ),
             newEmptyNode(),
             node[1][0]
           )
@@ -291,7 +301,7 @@ when isMainModule:
   #   var e: MyEntity
   #   e.params0 = 10
 
-  #   const myConst = 10
+  #   const myConst {.used.} = 10
 
   #   func myConst1*(_: typedesc[MyBase]): auto = 10
 
