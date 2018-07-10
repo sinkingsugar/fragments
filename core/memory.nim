@@ -1,5 +1,16 @@
 # memory utils
 
-template alloc*(objtype: typedesc): ptr objtype = cast[ptr objtype](alloc(sizeof(objtype)))
+proc alloc*[T](objtype: typedesc[T]): ptr T {.inline.} = 
+  result = cast[ptr T](alloc(sizeof(T)))
+  
+proc alloc0*[T](objtype: typedesc[T]): ptr T {.inline.} = 
+  result = cast[ptr T](alloc0(sizeof(T)))
 
-template alloc0*(objtype: typedesc): ptr objtype = cast[ptr objtype](alloc0(sizeof(objtype)))
+proc newptr*[T](objtype: typedesc[T]): ptr T {.inline.} = 
+  result = cast[ptr T](alloc(sizeof(T)))
+  result[] = T()
+
+proc delete*[T](p: ptr T) {.inline.} =
+  when compiles(`=destroy`(p[])):
+    `=destroy`(p[])
+  dealloc(p)

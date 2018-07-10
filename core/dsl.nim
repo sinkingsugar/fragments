@@ -232,7 +232,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
 
   return subresult
 
-macro makeClass*(name, definition: untyped): untyped =
+macro archetype*(name, definition: untyped): untyped =
   result = nnkStmtList.newTree()
   let classDefName = $name
   var
@@ -271,7 +271,7 @@ when isMainModule:
 
   method testMethod(b: var MyBase; wow: ref int) {.base.} = echo "Base"
 
-  makeClass entity:
+  archetype entity:
     super: MyBase
     proc start()
     proc run(state: int) {.async.}
