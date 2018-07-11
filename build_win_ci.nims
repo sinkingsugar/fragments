@@ -27,6 +27,7 @@ let
   buildScript = """
 nim cpp --cc:vcc --cincludes:. -r core/ffi/cpp.nim
 nim c --cc:vcc -r core/dsl.nim
+nim c --threads:on -r core/threading/locks.nim
 """ % [thisDir(), outputDir]
 
 writeFile("build.bat", buildScript)
