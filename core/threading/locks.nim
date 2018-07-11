@@ -55,7 +55,13 @@ proc init*(self: var Event) =
   initLock(self.lock)
   initCond(self.condition)
 
-proc `=destroy`*(self: var Event) =
+# Cannot use Event generic
+proc `=destroy`*(self: var ManualResetEvent) =
+  deinitLock(self.lock)
+  deinitCond(self.condition)
+
+# Cannot use Event generic
+proc `=destroy`*(self: var AutoResetEvent) =
   deinitLock(self.lock)
   deinitCond(self.condition)
 
