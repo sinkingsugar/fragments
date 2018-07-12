@@ -143,7 +143,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
-    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    converter `converterName`*(co: CppProxy): `name` {.used, importcpp:"(#)".}
     proc isCppObject*(T: typedesc[`name`]): bool = true
 
 template cppOverride*(str: string) {.pragma, used.}
@@ -212,7 +212,7 @@ macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, pr
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
-    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    converter `converterName`*(co: CppProxy): `name` {.used, importcpp:"(#)".}
     proc isCppObject*(T: typedesc[`name`]): bool = true
 
 # constructor call
