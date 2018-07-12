@@ -400,33 +400,33 @@ when isMainModule:
     super: MyBase
     contract: MyConcept
 
-  dumpAstGen:
-    type
-      MyEntity* = object of MyBase
-        param0: int
-        param1*: float
+  # dumpAstGen:
+  #   type
+  #     MyEntity* = object of MyBase
+  #       param0: int
+  #       param1*: float
     
-    type
-      MyEntity = object
-        param0: int
+  #   type
+  #     MyEntity = object
+  #       param0: int
 
-    var e: MyEntity
-    e.params0 = 10
+  #   var e: MyEntity
+  #   e.params0 = 10
 
-    const myConst {.used.} = 10
+  #   const myConst {.used.} = 10
 
-    func myConst1*(_: typedesc[MyBase]): auto = 10
+  #   func myConst1*(_: typedesc[MyBase]): auto = 10
 
-    proc start*(self: var MyEntity) =
-      const param0 = 10
+  #   proc start*(self: var MyEntity) =
+  #     const param0 = 10
     
-    var x = myConst1
+  #   var x = myConst1
 
-    static:
-      doAssert(MyEntity is MyConcept, "MyEntity is not MyConcept")
+  #   static:
+  #     doAssert(MyEntity is MyConcept, "MyEntity is not MyConcept")
 
-    converter toPtr*(x: ref MyEntity): ptr MyEntity = addr(x[])
-    converter toPtr*(x: var MyEntity): ptr MyEntity = addr(x)
+  #   converter toPtr*(x: ref MyEntity): ptr MyEntity = addr(x[])
+  #   converter toPtr*(x: var MyEntity): ptr MyEntity = addr(x)
 
   entity MyEntity:
     # {.private.}:
