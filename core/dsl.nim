@@ -37,7 +37,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
     methods = customTypes[classDefName].methods
     vars = customTypes[classDefName].vars
     contract = customTypes[classDefName].contract
-    selfNode = newIdentNode(className & "_self")
+    selfNode = newIdentNode("self")
 
   var
     procOrMethodNames = newSeq[string]()
@@ -173,7 +173,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
       )
     ))
 
-  # generate: {.this: MyEntity_self.}
+  # generate: {.this: self.}
   block: 
     subresult.add(nnkPragma.newTree(
       nnkExprColonExpr.newTree(
@@ -181,6 +181,66 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
         selfNode
       )
     ))
+
+  # generate converters from from ref and var to ptr, to allow self and call inject
+  subresult.add(nnkConverterDef.newTree(
+    nnkPostfix.newTree(
+      newIdentNode("*"),
+      newIdentNode("toPtr")
+    ),
+    newEmptyNode(),
+    newEmptyNode(),
+    nnkFormalParams.newTree(
+      nnkPtrTy.newTree(
+        newIdentNode(className)
+      ),
+      nnkIdentDefs.newTree(
+        newIdentNode("x"),
+        nnkRefTy.newTree(
+          newIdentNode(className)
+        ),
+        newEmptyNode()
+      )
+    ),
+    newEmptyNode(),
+    newEmptyNode(),
+    nnkStmtList.newTree(
+      nnkCall.newTree(
+        newIdentNode("addr"),
+        nnkBracketExpr.newTree(
+          newIdentNode("x")
+        )
+      )
+    )
+  ),
+  nnkConverterDef.newTree(
+    nnkPostfix.newTree(
+      newIdentNode("*"),
+      newIdentNode("toPtr")
+    ),
+    newEmptyNode(),
+    newEmptyNode(),
+    nnkFormalParams.newTree(
+      nnkPtrTy.newTree(
+        newIdentNode(className)
+      ),
+      nnkIdentDefs.newTree(
+        newIdentNode("x"),
+        nnkVarTy.newTree(
+          newIdentNode(className)
+        ),
+        newEmptyNode()
+      )
+    ),
+    newEmptyNode(),
+    newEmptyNode(),
+    nnkStmtList.newTree(
+      nnkCall.newTree(
+        newIdentNode("addr"),
+        newIdentNode("x")
+      )
+    )
+  ))
 
   # generate init proc
   block:
@@ -195,7 +255,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
         newEmptyNode(),
         nnkIdentDefs.newTree(
           selfNode,
-          nnkVarTy.newTree(
+          nnkPtrTy.newTree(
             newIdentNode(className)
           ),
           newEmptyNode()
@@ -219,7 +279,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
       )
       procCopy[3].insert(1, nnkIdentDefs.newTree(
         selfNode,
-        nnkVarTy.newTree(
+        nnkPtrTy.newTree(
           newIdentNode(className)
         ),
         newEmptyNode()
@@ -243,7 +303,7 @@ proc generateCustomCode(classDefName, className: string; body: NimNode): NimNode
         )
         procCopy[3].insert(1, nnkIdentDefs.newTree(
           selfNode,
-          nnkVarTy.newTree(
+          nnkPtrTy.newTree(
             newIdentNode(className)
           ),
           newEmptyNode()
@@ -340,30 +400,33 @@ when isMainModule:
     super: MyBase
     contract: MyConcept
 
-  # dumpAstGen:
-  #   type
-  #     MyEntity* = object of MyBase
-  #       param0: int
-  #       param1*: float
+  dumpAstGen:
+    type
+      MyEntity* = object of MyBase
+        param0: int
+        param1*: float
     
-  #   type
-  #     MyEntity = object
-  #       param0: int
+    type
+      MyEntity = object
+        param0: int
 
-  #   var e: MyEntity
-  #   e.params0 = 10
+    var e: MyEntity
+    e.params0 = 10
 
-  #   const myConst {.used.} = 10
+    const myConst {.used.} = 10
 
-  #   func myConst1*(_: typedesc[MyBase]): auto = 10
+    func myConst1*(_: typedesc[MyBase]): auto = 10
 
-  #   proc start*(self: var MyEntity) =
-  #     const param0 = 10
+    proc start*(self: var MyEntity) =
+      const param0 = 10
     
-  #   var x = myConst1
+    var x = myConst1
 
-  #   static:
-  #     doAssert(MyEntity is MyConcept, "MyEntity is not MyConcept")
+    static:
+      doAssert(MyEntity is MyConcept, "MyEntity is not MyConcept")
+
+    converter toPtr*(x: ref MyEntity): ptr MyEntity = addr(x[])
+    converter toPtr*(x: var MyEntity): ptr MyEntity = addr(x)
 
   entity MyEntity:
     # {.private.}:
@@ -393,7 +456,8 @@ when isMainModule:
 
   var x = MyEntity.param1
   var ent = new MyEntity
-  ent[].init()
+
+  ent.init()
   ent[].start()
   asyncCheck ent[].run(x)
   ent[].testMethod(nil)
