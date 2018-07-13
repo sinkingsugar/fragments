@@ -257,7 +257,7 @@ else:
       cast[T](atomic_fetch_xor_explicit(addr(location.value), cast[nonAtomicType(A)](value), order))
 
   template withLock(location: var AtomicObject; order: MemoryOrder; body: untyped): untyped =
-    while not location.guard.testAndSet(): discard
+    while location.guard.testAndSet(): discard
     body
     location.guard.clear()
 

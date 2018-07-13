@@ -1,5 +1,5 @@
-import cpuinfo
-import std/locks
+import cpuinfo, std/locks
+import atomics
 
 const
   maxSpinCount = 10
@@ -12,7 +12,7 @@ type
     count: int
 
   SpinLock* = object
-    state: bool
+    state: AtomicFlag
 
   ManualResetEvent* = object
     isSet: bool
@@ -36,12 +36,12 @@ proc spinOnce*(self: var SpinWait) {.inline.} =
 
 proc enter*(self: var SpinLock): bool {.inline.} =
   var wait: SpinWait
-  while not cas(addr(self.state), false, true):
+  while self.state.testAndSet():
     wait.spinOnce()
   return true
 
 proc exit*(self: var SpinLock) {.inline.} =
-  self.state = false
+  self.state.clear()
 
 template withLock*(self: var SpinLock; body: untyped): untyped =
   let isLockTaken = self.enter()
