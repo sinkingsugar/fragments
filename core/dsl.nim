@@ -385,7 +385,7 @@ when isMainModule:
     MyConcept = concept x
       x.value0 is int
 
-  method testMethod(b: var MyBase; wow: ref int) {.base.} = echo "Base"
+  method testMethod(b: ptr MyBase; wow: ref int) {.base.} = echo "Base"
 
   archetype entity:
     super: MyBase
@@ -486,10 +486,10 @@ when isMainModule:
 
   var y = MyEntity2.param1
   var ent2 = new MyEntity2
-  ent2[].init()
-  ent2[].start()
-  asyncCheck ent2[].run(x)
-  ent2[].testMethod(nil)
+  ent2.init()
+  ent2.start()
+  asyncCheck ent2.run(x)
+  addr(ent2[]).testMethod(nil) # converter fails for methods... kinda TODO
   
   echo ent2.var1
   assert(ent2.var1 == 9.0)
@@ -521,5 +521,5 @@ when isMainModule:
   
   var c: MyContractor
   c.value0 = 11
-  c.testMethod(nil)
+  addr(c).testMethod(nil)
   
