@@ -32,6 +32,8 @@
 *.app
 
 *.user
+*.ilk
+*.pdb
 
 Temp/
 bin/

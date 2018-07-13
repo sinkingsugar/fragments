@@ -6,6 +6,7 @@ test_ffi_cpp_linux:
     - nim cpp --cincludes:. -r core/ffi/cpp.nim
     - nim c -r core/dsl.nim
     - nim c --threads:on -r core/threading/locks.nim
+    - nim c --threads:on -r core/threading/atomics.nim
   tags:
     - NIM, LINUX
     

@@ -28,6 +28,7 @@ let
 nim cpp --cc:vcc --cincludes:. -r core/ffi/cpp.nim
 nim c --cc:vcc -r core/dsl.nim
 nim c --cc:vcc --threads:on -r core/threading/locks.nim
+nim c --cc:vcc --threads:on -r core/threading/atomics.nim
 """ % [thisDir(), outputDir]
 
 writeFile("build.bat", buildScript)
