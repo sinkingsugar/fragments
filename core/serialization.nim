@@ -61,6 +61,8 @@ proc isBlittable*(t: typedesc): bool {.compileTime.} =
   t.getType().isBlittable()
 
 type
+  FourCC* = distinct int32
+
   ReferenceSerializationKind* {.pure, size: sizeof(int8).} = enum
     Nil
     Reference
@@ -84,6 +86,14 @@ type
   Serializable* = concept v, var m
     v.serializeValue(SerializationContext)
     m.deserializeValue(SerializationContext)
+
+proc toFourCC*(c1, c2, c3, c4: char): FourCC {.compileTime.} =
+  return FourCC((ord(c1).cint and 255) + ((ord(c2).cint and 255) shl 8) +
+    ((ord(c3).cint and 255) shl 16) + ((ord(c4).cint and 255) shl 24))
+
+proc toFourCC*(str: string): FourCC {.compileTime.} =
+  doAssert(str.len == 4, "To make a FourCC from a string the string needs to be exactly 4 chars long")
+  return toFourCC(str[0], str[1], str[2], str[3])
 
 proc newSerializationContext*(stream: Stream): SerializationContext =
   new(result)

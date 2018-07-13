@@ -129,7 +129,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
   result = nnkStmtList.newTree()
 
   result.add quote do:
-    type `name` {.header: "", importcpp: "", inheritable.} = object
+    type `name`* {.header: "", importcpp: "", inheritable.} = object
 
   if headerStr != nil:
     # replace empty string with proper values
@@ -143,7 +143,7 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
-    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    converter `converterName`*(co: CppProxy): `name` {.used, importcpp:"(#)".}
     proc isCppObject*(T: typedesc[`name`]): bool = true
 
 template cppOverride*(str: string) {.pragma, used.}
@@ -212,7 +212,7 @@ macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, pr
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
-    converter `converterName`(co: CppProxy): `name` {.used, importcpp:"(#)".}
+    converter `converterName`*(co: CppProxy): `name` {.used, importcpp:"(#)".}
     proc isCppObject*(T: typedesc[`name`]): bool = true
 
 # constructor call
@@ -268,9 +268,13 @@ template cppnewptr*(myPtr: ptr CppObject, arg0: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0)
 
-template cppnewptr*(myPtr: ptr CppObject, arg0: typed, arg1: typed): untyped =
+template cppnewptr*(myPtr: ptr CppObject, arg0, arg1: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0, arg1)
+
+template cppnewptr*(myPtr: ptr CppObject, arg0, arg1, arg2: typed): untyped =
+  myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
+  myPtr.cppctor(arg0, arg1, arg2)
 
 proc `+`  *(x, y: CppProxy): CppProxy {.importcpp:"(# + #)".}
 proc `-`  *(x, y: CppProxy): CppProxy {.importcpp:"(# - #)".}
