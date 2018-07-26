@@ -419,7 +419,53 @@ macro `.=`*(obj: CppObject, field, value: untyped): untyped =
       proc helper(o: CppObject, v: auto) {. importcpp: `importString`, gensym .}
       helper(`obj`, `value`.toCpp)
 
-macro `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
+macro dynamicCppCall*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
+  # Experimental "method call" operator for type CppProxy.
+  # Takes the name of a method of the JavaScript object (`field`) and calls
+  # it with `args` as arguments, returning a CppProxy (which may be discarded,
+  # and may be `undefined`, if the method does not return anything,
+  # so be careful when using this.)
+  #
+  # Example:
+  #
+  # .. code-block:: nim
+  #
+  #  # Let's get back to the console example:
+  #  var console {. importc, nodecl .}: CppProxy
+  #  let res = console.log("I return undefined!")
+  #  console.log(res) # This prints undefined, as console.log always returns
+  #                   # undefined. Thus one has to be careful, when using
+  #                   # CppProxy calls. 
+  var importString: string
+  if obj.len == 0 and $obj == CppGlobalName:
+    importString = $field & "(@)"
+    
+    result = quote:
+      proc helper(): CppProxy {.importcpp:`importString`, gensym.}
+      helper()
+  else:
+    if validCppName($field):
+      when defined(js):
+        importString = "#." & "_" & $field & "(@)"
+      else:
+        importString = "#." & $field & "(@)"
+    else:
+      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCppName($field)
+      when defined(js):
+        importString = "#." & "_" & mangledNames[$field] & "(@)"
+      else:
+        importString = "#." & mangledNames[$field] & "(@)"
+
+    result = quote:
+      proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
+      helper(`obj`)
+  
+  for idx in 0 ..< args.len:
+    let paramName = ident("param" & $idx)
+    result[0][3].add newIdentDefs(paramName, ident("CppProxy"))
+    result[1].add args[idx].copyNimTree
+
+macro `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy = 
   # Experimental "method call" operator for type CppProxy.
   # Takes the name of a method of the JavaScript object (`field`) and calls
   # it with `args` as arguments, returning a CppProxy (which may be discarded,
