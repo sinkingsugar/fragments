@@ -11,7 +11,6 @@ let
     "Enterprise",
     "Community"
   ]
-  outputDir = "openssl\\output"
 
 for flavor in vsFlavors:
   if existsFile(programFiles & "\\Microsoft Visual Studio\\2017\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"):
@@ -25,11 +24,11 @@ doAssert(varScript != nil)
 
 let 
   buildScript = """
-nim cpp --cc:vcc --cincludes:. -r core/ffi/cpp.nim
-nim c --cc:vcc -r core/dsl.nim
-nim c --cc:vcc --threads:on -r core/threading/locks.nim
-nim c --cc:vcc --threads:on -r core/threading/atomics.nim
-""" % [thisDir(), outputDir]
+nim cpp --cc:vcc --cincludes:. -r fragments/ffi/cpp.nim
+nim c --cc:vcc -r fragments/dsl.nim
+nim c --cc:vcc --threads:on -r fragments/threading/locks.nim
+nim c --cc:vcc --threads:on -r fragments/threading/atomics.nim
+""" % [thisDir()]
 
 writeFile("build.bat", buildScript)
 
