@@ -26,7 +26,7 @@ let
   buildScript = """
 nim cpp --cc:vcc --cincludes:. -r fragments/ffi/cpp.nim
 nim c --cc:vcc -r fragments/dsl.nim
-nim c --cc:vcc --threads:on -r fragments/threading/locks.nim
+nim c --cc:vcc --threads:on -r fragments/threading/threading_primitives.nim
 nim c --cc:vcc --threads:on -r fragments/threading/atomics.nim
 """ % [thisDir()]
 
