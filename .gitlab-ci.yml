@@ -7,6 +7,10 @@ test_ffi_cpp_linux:
     - nim c -r fragments/dsl.nim
     - nim c --threads:on -r fragments/threading/threading_primitives.nim
     - nim c --threads:on -r fragments/threading/atomics.nim
+    - nim cpp --threads:on -r fragments/threading/atomics.nim
+    - nim c -r fragments/math/linalg.nim
+    - nim c -r fragments/math/vectors.nim
+    - nim c -r fragments/serialization.nim
   tags:
     - NIM, LINUX
     

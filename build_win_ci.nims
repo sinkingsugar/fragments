@@ -28,6 +28,10 @@ nim cpp --cc:vcc --cincludes:. -r fragments/ffi/cpp.nim
 nim c --cc:vcc -r fragments/dsl.nim
 nim c --cc:vcc --threads:on -r fragments/threading/threading_primitives.nim
 nim c --cc:vcc --threads:on -r fragments/threading/atomics.nim
+nim cpp --cc:vcc --threads:on -r fragments/threading/atomics.nim
+nim c --cc:vcc -r fragments/math/linalg.nim
+nim c --cc:vcc -r fragments/math/vectors.nim
+nim c --cc:vcc -r fragments/serialization.nim
 """ % [thisDir()]
 
 writeFile("build.bat", buildScript)
