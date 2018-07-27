@@ -1,4 +1,4 @@
-import cpuinfo, std/locks
+import cpuinfo, locks
 import atomics
 
 const
