@@ -1,8 +1,8 @@
 # Package
-version     = "0.1.0"
+version     = "0.1.1"
 author      = "fragcolor-xyz"
 description = "Our very personal collection of utilities"
 license     = "MIT"
 
 # Deps
-requires "nim >= 0.18.0"
+requires "nim >= 0.18.1"
