@@ -36,12 +36,12 @@ proc spinOnce*(self: var SpinWait) {.inline.} =
 
 proc enter*(self: var SpinLock): bool {.inline.} =
   var wait: SpinWait
-  while self.state.testAndSet():
+  while self.state.testAndSet(moAcquire):
     wait.spinOnce()
   return true
 
 proc exit*(self: var SpinLock) {.inline.} =
-  self.state.clear()
+  self.state.clear(moRelease)
 
 template withLock*(self: var SpinLock; body: untyped): untyped =
   let isLockTaken = self.enter()
@@ -82,7 +82,7 @@ proc waitOne*(self: var Event) =
       self.isSet = false
 
 when isMainModule:
-  import threadpool
+  import std/threadpool
 
   var manualEvent: ManualResetEvent
   manualEvent.init()

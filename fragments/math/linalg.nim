@@ -1,4 +1,5 @@
 import math, macros, strutils, vectors, math_common
+export vectors
   
 {.experimental.}
 
