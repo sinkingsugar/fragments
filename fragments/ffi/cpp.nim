@@ -81,10 +81,6 @@ else:
       
       result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
 
-var
-  mangledNames {. compileTime .} = initTable[string, string]()
-  nameCounter {. compileTime .} = 0
-
 type CppGlobalType* = object
 proc isCppObject*(T: typedesc[CppGlobalType]): bool = true
 var global* {.nodecl.}: CppGlobalType
@@ -93,29 +89,6 @@ const CppGlobalName = "global"
 const
   setImpl = "#[#] = #"
   getImpl = "#[#]"
-
-template mangleCppName(name: string): string =
-  inc nameCounter
-  "mangledName" & $nameCounter
-
-proc validCppName(name: string): bool =
-  result = true
-  const reservedWords = ["break", "case", "catch", "class", "const", "continue",
-    "debugger", "default", "delete", "do", "else", "export", "extends",
-    "finally", "for", "function", "if", "import", "in", "instanceof", "new",
-    "return", "super", "switch", "this", "throw", "try", "typeof", "var",
-    "void", "while", "with", "yield", "enum", "implements", "interface",
-    "let", "package", "private", "protected", "public", "static", "await",
-    "abstract", "boolean", "byte", "char", "double", "final", "float", "goto",
-    "int", "long", "native", "short", "synchronized", "throws", "transient",
-    "volatile", "null", "true", "false"]
-  case name
-  of reservedWords: return false
-  else: discard
-  if name[0] notin {'A'..'Z','a'..'z','_','$'}: return false
-  for chr in name:
-    if chr notin {'A'..'Z','a'..'z','_','$','0'..'9'}:
-      return false
 
 when not defined(js):
   {.emit:["""/*TYPESECTION*/
@@ -140,75 +113,6 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
     result[0][0][0][1].del(0)
     # replace empty string with proper values
     result[0][0][0][1][0][1] = newStrLitNode($importCppStr)
-
-  var converterName = newIdentNode("to" & $name)
-  result.add quote do:
-    converter `converterName`*(co: CppProxy): `name` {.used, importcpp:"(#)".}
-    proc isCppObject*(T: typedesc[`name`]): bool = true
-
-template cppOverride*(str: string) {.pragma, used.}
-template cppCall*(str: string) {.pragma, used.}
-
-# to be improved
-macro defineCppSubType*(name: untyped, superType: typed, superCppStr: string, procs: untyped): untyped =
-  result = nnkStmtList.newTree()
-
-  var internalName = $name & "CppStruct"
-
-  var typeDecl = quote do:
-    type `name` {.importcpp:"".} = object of `superType`
-      x: int
-  typeDecl[0][0][1][0][1] = newStrLitNode($internalName)
-
-  var procsToAdd = newSeq[NimNode]()
-
-  var emitStmts = newSeq[NimNode]()
-
-  # we need forward decl
-  result.add quote do:
-    {.emit:["struct ", `internalName`,";\n"].}
-
-  emitStmts.add quote do:
-    {.emit:["struct ", `internalName`, " : public ", `superCppStr`, " {\n"].}
-
-  for node in procs:
-    echo node.treeRepr
-    case node.kind
-    of nnkProcDef:  
-      var procStr = node[4][0][1]
-      var callStr = node[4][1][1]
-      var procName = $name & $node[0]
-      if node[3][0].kind == nnkEmpty: # void return
-        emitStmts.add quote do:
-          {.emit:[`procStr`, " override { return ", `procName`, "(this", `callStr`,"); }\n"].}
-      else:
-        emitStmts.add quote do:
-          {.emit:[`procStr`, " override { ", `procName`, "(this", `callStr`, "); }\n"].}
-
-      # mangle the name of the generated proc since we export c
-      node[0] = newIdentNode(procName)
-      # make sure we generate properly, idealy codegendecl is better?
-      node.addPragma(newIdentNode("exportc"))
-
-      # inject self
-      node[3].insert(1, newIdentDefs(ident("self"), `name`))
-
-      procsToAdd.add(node)
-    of nnkCall:
-      discard
-    else:
-      discard
-
-  emitStmts.add quote do:
-    {.emit:["\n};\n"].}
-
-  result.add(typeDecl)
-
-  for procToAdd in procsToAdd:
-    result.add(procsToAdd)
-  
-  for emitStmt in emitStmts:
-    result.add(emitStmt)
 
   var converterName = newIdentNode("to" & $name)
   result.add quote do:
@@ -365,77 +269,49 @@ macro CppFromAst*(n: untyped): untyped =
     result = newProc(procType = nnkDo, body = result)
   return quote: toCpp(`result`)
 
-macro `.`*(obj: CppObject, field: untyped): CppProxy =
+macro dynamicCppGet*(obj: CppObject, field: untyped): CppProxy =
   ## Experimental dot accessor (get) for type JsObject.
-  ## Returns the value of a property of name `field` from a JsObject `x`.
-  ##
-  ## Example:
-  ##
-  ## .. code-block:: nim
-  ##
-  ##  let obj = newJsObject()
-  ##  obj.a = 20
-  ##  console.log(obj.a) # puts 20 onto the console.
-  if validCppName($field):
-    if obj.len == 0 and $obj == CppGlobalName:
-      let importString = "(" & $field & ")"
-      result = quote do:
-        proc helper(): CppProxy {.importcpp:`importString`, gensym.}
-        helper()
-    else:
-      let importString = "#." & $field
-      result = quote do:
-        proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
-        helper(`obj`)
+  ## Returns the value of a property of name `field` from a CppObject `x`.
+  if obj.len == 0 and $obj == CppGlobalName:
+    let importString = "(" & $field & ")"
+    result = quote do:
+      proc helper(): CppProxy {.importcpp:`importString`, gensym.}
+      helper()
   else:
-    if not mangledNames.hasKey($field):
-      mangledNames[$field] = $mangleCppName($field)
-    
-    let importString = "#." & mangledNames[$field]
-    
+    let importString = "#." & $field
     result = quote do:
       proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
       helper(`obj`)
 
-macro `.=`*(obj: CppObject, field, value: untyped): untyped =
+template `.`*(obj: CppObject, field: untyped): CppProxy =
+  ## Experimental dot accessor (get) for type JsObject.
+  ## Returns the value of a property of name `field` from a CppObject `x`.
+  dynamicCppGet(obj, field)
+
+macro dynamicCppSet*(obj: CppObject, field, value: untyped): untyped =
   ## Experimental dot accessor (set) for type JsObject.
-  ## Sets the value of a property of name `field` in a JsObject `x` to `value`.
-  if validCppName($field):
-    if obj.len == 0 and $obj == CppGlobalName:
-      let importString = $field & " = #"
-      result = quote do:
-        proc helper(v: auto) {.importcpp:`importString`, gensym.}
-        helper(`value`.toCpp)
-    else:
-      let importString = "#." & $field & " = #"
-      result = quote do:
-        proc helper(o: CppObject, v: auto) {.importcpp:`importString`, gensym.}
-        helper(`obj`, `value`.toCpp)
-  else:
-    if not mangledNames.hasKey($field):
-      mangledNames[$field] = $mangleCppName($field)
-    let importString = "#." & mangledNames[$field] & " = #"
+  ## Sets the value of a property of name `field` in a CppObject `x` to `value`.
+  if obj.len == 0 and $obj == CppGlobalName:
+    let importString = $field & " = #"
     result = quote do:
-      proc helper(o: CppObject, v: auto) {. importcpp: `importString`, gensym .}
+      proc helper(v: auto) {.importcpp:`importString`, gensym.}
+      helper(`value`.toCpp)
+  else:
+    let importString = "#." & $field & " = #"
+    result = quote do:
+      proc helper(o: CppObject, v: auto) {.importcpp:`importString`, gensym.}
       helper(`obj`, `value`.toCpp)
 
+template `.=`*(obj: CppObject, field, value: untyped): untyped =
+  ## Experimental dot accessor (set) for type JsObject.
+  ## Sets the value of a property of name `field` in a CppObject `x` to `value`.
+  dynamicCppSet(obj, field, value)
+
 macro dynamicCppCall*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
-  # Experimental "method call" operator for type CppProxy.
-  # Takes the name of a method of the JavaScript object (`field`) and calls
-  # it with `args` as arguments, returning a CppProxy (which may be discarded,
-  # and may be `undefined`, if the method does not return anything,
-  # so be careful when using this.)
-  #
-  # Example:
-  #
-  # .. code-block:: nim
-  #
-  #  # Let's get back to the console example:
-  #  var console {. importc, nodecl .}: CppProxy
-  #  let res = console.log("I return undefined!")
-  #  console.log(res) # This prints undefined, as console.log always returns
-  #                   # undefined. Thus one has to be careful, when using
-  #                   # CppProxy calls. 
+  ## Experimental "method call" operator for type CppProxy.
+  ## Takes the name of a method of the JavaScript object (`field`) and calls
+  ## it with `args` as arguments, returning a CppProxy 
+  ## return types have to be casted unless the type is known using `to(T)`, void returns need `to(void)`
   var importString: string
   if obj.len == 0 and $obj == CppGlobalName:
     importString = $field & "(@)"
@@ -444,18 +320,11 @@ macro dynamicCppCall*(obj: CppObject, field: untyped, args: varargs[CppProxy, Cp
       proc helper(): CppProxy {.importcpp:`importString`, gensym.}
       helper()
   else:
-    if validCppName($field):
-      when defined(js):
-        importString = "#." & "_" & $field & "(@)"
-      else:
-        importString = "#." & $field & "(@)"
+    when defined(js):
+      importString = "#." & "_" & $field & "(@)"
     else:
-      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCppName($field)
-      when defined(js):
-        importString = "#." & "_" & mangledNames[$field] & "(@)"
-      else:
-        importString = "#." & mangledNames[$field] & "(@)"
-
+      importString = "#." & $field & "(@)"
+    
     result = quote:
       proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
       helper(`obj`)
@@ -465,51 +334,12 @@ macro dynamicCppCall*(obj: CppObject, field: untyped, args: varargs[CppProxy, Cp
     result[0][3].add newIdentDefs(paramName, ident("CppProxy"))
     result[1].add args[idx].copyNimTree
 
-macro `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy = 
-  # Experimental "method call" operator for type CppProxy.
-  # Takes the name of a method of the JavaScript object (`field`) and calls
-  # it with `args` as arguments, returning a CppProxy (which may be discarded,
-  # and may be `undefined`, if the method does not return anything,
-  # so be careful when using this.)
-  #
-  # Example:
-  #
-  # .. code-block:: nim
-  #
-  #  # Let's get back to the console example:
-  #  var console {. importc, nodecl .}: CppProxy
-  #  let res = console.log("I return undefined!")
-  #  console.log(res) # This prints undefined, as console.log always returns
-  #                   # undefined. Thus one has to be careful, when using
-  #                   # CppProxy calls. 
-  var importString: string
-  if obj.len == 0 and $obj == CppGlobalName:
-    importString = $field & "(@)"
-    
-    result = quote:
-      proc helper(): CppProxy {.importcpp:`importString`, gensym.}
-      helper()
-  else:
-    if validCppName($field):
-      when defined(js):
-        importString = "#." & "_" & $field & "(@)"
-      else:
-        importString = "#." & $field & "(@)"
-    else:
-      if not mangledNames.hasKey($field): mangledNames[$field] = $mangleCppName($field)
-      when defined(js):
-        importString = "#." & "_" & mangledNames[$field] & "(@)"
-      else:
-        importString = "#." & mangledNames[$field] & "(@)"
-
-    result = quote:
-      proc helper(o: CppObject): CppProxy {.importcpp:`importString`, gensym.}
-      helper(`obj`)
-  
-  for idx in 0 ..< args.len:
-    let paramName = ident("param" & $idx)
-    result[0][3].add newIdentDefs(paramName, ident("CppProxy"))
-    result[1].add args[idx].copyNimTree
+template `.()`*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
+  ## Experimental "method call" operator for type CppProxy.
+  ## Takes the name of a method of the JavaScript object (`field`) and calls
+  ## it with `args` as arguments, returning a CppProxy 
+  ## return types have to be casted unless the type is known using `to(T)`, void returns need `to(void)`
+  dynamicCppCall(obj, field, args)
     
 # iterator utils
 type CppIterator* {.importcpp: "'0::iterator".} [T] = object
@@ -536,16 +366,6 @@ when isMainModule:
   
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
-  
-  #[ to be improved
-  defineCppSubType(MyOwnClass2, MyClass2, "MyClass2"):
-    proc testVir(): cint {.cppOverride:"int testVir()", cppCall:"".} =
-      return 22
-    proc testVir2(i: cint): cint {.cppOverride:"int testVir2(int i)", cppCall:",i".} =
-      return i + 22
-    proc testVir3(i: cint) {.cppOverride:"void testVir3(int i)", cppCall:",i".} =
-      echo i + 22
-  ]#
 
   # expandMacros:
   # dumpAstGen:
@@ -605,11 +425,5 @@ when isMainModule:
       # TODO check macros -> callsite macro
 
       x1.testVir3(11).to(void)
-
-      # var subx1 = cppinit(MyOwnClass2)
-      # echo $subx1.test20(1).to(cint)
-
-      # subx1.testVir3(11).to(void)
-      # subx1.testVir4(11).to(void)
 
     run()
