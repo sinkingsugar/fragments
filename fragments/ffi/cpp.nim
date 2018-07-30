@@ -10,6 +10,11 @@ type
 when defined(js):
   type WasmPtr* = distinct int
 else:
+  # linux gprof utility define
+  when defined(linux) and defined(gprof):
+    {.passC: "-pg".}
+    {.passL: "-pg".}
+
   # compiler utilities
   macro cppdefines*(defines: varargs[string]): untyped =
     result = nnkStmtList.newTree()
