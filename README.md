@@ -6,6 +6,7 @@
 
 ### ffi
 * **cpp**: inspired from the official `jsffi`, using the magic of importcpp, macros and many other nim cool features, **dynamic c++**, wrappers are a thing of the past write straight cpp code from nim.
+
 ```nimrod
 cppdefines("MYDEFINE", "MYDEFINE2=10")
 cppincludes(".")
@@ -40,8 +41,8 @@ echo $global.globalNumber.to(cint)
 global.printf("Hello World\n".cstring).to(void)
 y.test3().to(void)
 y.test4(7, 8).to(void)
-
 ```
+
 * **js** a collection of utilities for the js backend
 
 ### math
@@ -56,6 +57,7 @@ y.test4(7, 8).to(void)
 
 ### dsl
 Macros to define custom nim DSLs, for example:
+
 ```nimrod
 type
   MyBase = object of RootObj
