@@ -136,11 +136,11 @@ proc cppctor*[T: CppObject](x: ref T): ref T {.header:"new", importcpp: "(new (#
 # normal destructor for value types
 proc cppdtor*[T: CppObject](x: T) {.importcpp:"#.~'1()".}
 
-# magic placement new compatible destructor for ptrs
-proc cppdtor*[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
+# magic placement new compatible destructor for ptrs, cannot export, uses emitted symbols
+proc cppdtor[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
 
-# magic placement new compatible destructor for refs
-proc cppdtor*[T](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
+# magic placement new compatible destructor for refs, cannot export, uses emitted symbols
+proc cppdtor[T](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
 
 proc cppdelptr*[T: CppObject](x: ptr T) =
   x.cppdtor()
