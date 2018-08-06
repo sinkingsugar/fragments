@@ -138,23 +138,20 @@ proc cppdelptr*[T: CppObject](x: ptr T) =
   x.cppdtor()
   dealloc(x)
 
-proc cppdelref*[T: CppObject](x: ref T) =
-  x.cppdtor()
-
 # refs
 
 template cppnewref*(myRef: ref CppObject): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdelref())
+  new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor()
 
 # I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
 
 template cppnewref*(myRef: ref CppObject, arg0: typed): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdelref())
+  new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor(arg0)
 
 template cppnewref*(myRef: ref CppObject, arg0: typed, arg1: typed): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdelref())
+  new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor(arg0, arg1)
 
 # ptr
