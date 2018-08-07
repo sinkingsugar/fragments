@@ -1,6 +1,6 @@
 {.experimental.}
 
-import macros, tables, strutils
+import macros, tables, strutils, ospaths
 
 type
   CppProxy* {.nodecl.} = object
@@ -34,7 +34,7 @@ else:
     for incl in includes:
       var str: string
       when defined windows:
-        let win_incl = ($incl).replace("/", "\\")
+        let win_incl = ($incl).replace("/", "\\").quoteShell
         when defined vcc:
           str = "/I" & win_incl
         else:
@@ -50,7 +50,7 @@ else:
     for file in files:
       var str: string
       when defined windows:
-        let win_incl = ($file).replace("/", "\\") 
+        let win_incl = ($file).replace("/", "\\") .quoteShell
         str = win_incl
       else:
         str = $file
@@ -63,7 +63,7 @@ else:
     for path in paths:
       var str: string
       when defined windows:
-        let win_path = ($path).replace("/", "\\")
+        let win_path = ($path).replace("/", "\\").quoteShell
         when defined vcc:
           str = "/LIBPATH:" & win_path
         else:
@@ -79,7 +79,7 @@ else:
     for lib in libs:
       var str: string
       when defined windows:
-        let win_incl = ($lib).replace("/", "\\") 
+        let win_incl = ($lib).replace("/", "\\").quoteShell
         str = win_incl
       else:
         str = $lib
