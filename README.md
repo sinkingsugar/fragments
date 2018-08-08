@@ -51,19 +51,19 @@ var y = cast[ptr MyClass](alloc0(sizeof(MyClass)))
 var j: ref MyClass
 cppnewref(j, 1)
 j.number = 22
-echo $j.number.to(cint)
+echo j.number.to(cint)
 
 # Create an untracked C++ object
 var k: ptr MyClass 
 cppnewptr(k, 2)
 k.number = 55
-echo $k.number.to(cint)
+echo k.number.to(cint)
 k.cppdelptr
 
 # Accessing global variables and functions
-echo $global.globalNumber.to(cint)
+echo global.globalNumber.to(cint)
 global.globalNumber = 102
-echo $global.globalNumber.to(cint)
+echo global.globalNumber.to(cint)
 global.printf("Hello World\n".cstring).to(void)
 
 # Accessing members
