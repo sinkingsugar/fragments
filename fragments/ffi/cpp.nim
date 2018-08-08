@@ -120,57 +120,74 @@ macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ni
 proc cppinit*(T: typedesc[CppObject]): T {.importcpp:"'0(@)", varargs, constructor.}
 
 # magic placement new constructor for ptrs
-proc cppctor*[T: CppObject](x: ptr T): ptr T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
+proc cppctor*[T](x: ptr T): ptr T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
 
 # magic placement new constructor for refs
-proc cppctor*[T: CppObject](x: ref T): ref T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
+proc cppctor*[T](x: ref T): ref T {.header:"new", importcpp: "(new (#) '*0(@))", varargs, nodecl, discardable.}
+
+when not defined(js):
+  {.emit:["""/*TYPESECTION*/
+  #ifdef __cplusplus
+  template<typename T>
+  static inline void callCppPtrDestructor(T* instance) { instance->~T(); }
+  #endif
+    """].}
 
 # normal destructor for value types
-proc cppdtor*[T: CppObject](x: T) {.importcpp:"#.~'1()".}
+proc cppdtor[T: CppObject](x: T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for ptrs
-proc cppdtor*[T: CppObject](x: ptr T) = x[].cppdtor()
+proc cppdtor[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for refs
-proc cppdtor*[T](x: ref T) = x[].cppdtor()
+proc cppdtor[T: CppObject](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
 
-proc cppdelptr*[T: CppObject](x: ptr T) =
+# normal destructor for value types
+proc cppdtor[T: not CppObject](x: T) {.importcpp:"#.~'1()".}
+
+# magic placement new compatible destructor for ptrs
+proc cppdtor[T: not CppObject](x: ptr T) = x[].cppdtor()
+
+# magic placement new compatible destructor for refs
+proc cppdtor[T: not CppObject](x: ref T) = x[].cppdtor()
+
+proc cppdelptr*[T](x: ptr T) =
   x.cppdtor()
   dealloc(x)
 
 # refs
 
-template cppnewref*(myRef: ref CppObject): untyped =
+template cppnewref*(myRef: ref): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor()
 
 # I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
 
-template cppnewref*(myRef: ref CppObject, arg0: typed): untyped =
+template cppnewref*(myRef: ref, arg0: typed): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor(arg0)
 
-template cppnewref*(myRef: ref CppObject, arg0: typed, arg1: typed): untyped =
+template cppnewref*(myRef: ref, arg0: typed, arg1: typed): untyped =
   new(myRef, proc(self: type(myRef)) = self.cppdtor())
   myRef.cppctor(arg0, arg1)
 
 # ptr
 
-template cppnewptr*(myPtr: ptr CppObject): untyped =
+template cppnewptr*(myPtr: ptr): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor()
 
 # I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
 
-template cppnewptr*(myPtr: ptr CppObject, arg0: typed): untyped =
+template cppnewptr*(myPtr: ptr, arg0: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0)
 
-template cppnewptr*(myPtr: ptr CppObject, arg0, arg1: typed): untyped =
+template cppnewptr*(myPtr: ptr, arg0, arg1: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0, arg1)
 
-template cppnewptr*(myPtr: ptr CppObject, arg0, arg1, arg2: typed): untyped =
+template cppnewptr*(myPtr: ptr, arg0, arg1, arg2: typed): untyped =
   myPtr = cast[type(myPtr)](alloc0(sizeof(type(myPtr[]))))
   myPtr.cppctor(arg0, arg1, arg2)
 
