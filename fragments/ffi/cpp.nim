@@ -402,32 +402,32 @@ when isMainModule:
       var j: ref MyClass
       cppnewref(j, 1)
       j.number = 22
-      echo $j.number.to(cint)
+      echo j.number.to(cint)
       
       var k: ptr MyClass 
       cppnewptr(k, 2)
       k.number = 55
-      echo $k.number.to(cint)
+      echo k.number.to(cint)
       k.cppdelptr
       
-      echo $global.globalNumber.to(cint)
+      echo global.globalNumber.to(cint)
       global.globalNumber = 102
-      echo $global.globalNumber.to(cint)
+      echo global.globalNumber.to(cint)
       
       global.printf("Hello World\n".cstring).to(void)
       y.test3().to(void)
       y.test4(7, 8).to(void)
 
-      echo $q.number.to(cint)
+      echo q.number.to(cint)
       y.number = 80
       y.numbers[0] = 23
       var n = (x.number + y.number + y.numbers[0]).to(cint)
       var nInt: int = x.number + y.number + y.numbers[0]
-      echo $nInt
-      echo $n
-      echo $x.test(1).to(cdouble)
-      echo $x.test(x.test2(2)).to(cdouble)
-      echo $x.test2(3).to(cint)
+      echo nInt
+      echo n
+      echo x.test(1).to(cdouble)
+      echo x.test(x.test2(2)).to(cdouble)
+      echo x.test2(3).to(cint)
 
       z.cppdtor()
       x.cppdtor()
@@ -435,16 +435,16 @@ when isMainModule:
       cppdelptr nxp
 
       var x1 = cppinit(MyClass2, 1)
-      echo $x1.test20(1).to(cint)
+      echo x1.test20(1).to(cint)
 
       var c1 = x1.class1.to(MyClass)
       c1.test3().to(void)
       x1.class1.test3().to(void)
       var myFloat: float32 = x1.myDouble
-      echo $myFloat
+      echo myFloat
       var myStr = "Hello Mars"
       x1.myCstring = myStr
-      echo $x1.myCstring.to(cstring)
+      echo x1.myCstring.to(cstring)
       # TODO check macros -> callsite macro
 
       x1.testVir3(11).to(void)
