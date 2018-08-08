@@ -130,11 +130,14 @@ when not defined(js):
   #ifdef __cplusplus
   template<typename T>
   static inline void callCppPtrDestructor(T* instance) { instance->~T(); }
+  
+  template<typename T>
+  static inline void callCppPtrDestructor(T& instance) { instance.~T(); }
   #endif
     """].}
 
 # normal destructor for value types
-proc cppdtor[T: CppObject](x: T) {.importcpp:"callCppPtrDestructor(#)".}
+proc cppdtor[T: CppObject](x: var T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for ptrs
 proc cppdtor[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
@@ -378,11 +381,18 @@ when isMainModule:
   defineCppType(MyClass, "MyClass", "MyClass.hpp")
   defineCppType(MyClass2, "MyClass2", "MyClass.hpp")
 
+  type
+    MyNimType = object # my nim types still needs to use cpp ctor/dtor cos includes a cpp type inside
+      x: MyClass
+
   # expandMacros:
   # dumpAstGen:
   when true: 
     proc run() =
       var x = cppinit(MyClass, 1)
+      var nx: MyNimType
+      var nxp: ptr MyNimType
+      cppnewptr nxp
       var y = cast[ptr MyClass](alloc0(sizeof(MyClass)))
       var w: ref MyClass
       new(w, proc(self: ref MyClass) = self.cppdtor())
@@ -421,6 +431,8 @@ when isMainModule:
 
       z.cppdtor()
       x.cppdtor()
+      nx.cppdtor()
+      cppdelptr nxp
 
       var x1 = cppinit(MyClass2, 1)
       echo $x1.test20(1).to(cint)
