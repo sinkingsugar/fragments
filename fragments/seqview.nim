@@ -7,6 +7,10 @@ proc view*[T](s: var seq[T]; slice: Slice[int]): SeqView[T] {.inline.} =
   result.root = addr s[slice.a]
   result.length = slice.b - slice.a + 1
 
+proc view*[T](s: var seq[T]): SeqView[T] {.inline.} =
+  result.root = addr s[0]
+  result.length = s.len
+
 proc high*(v: SeqView): int {.inline.} = v.length - 1
 
 proc len*(v: SeqView): int {.inline.} = v.length
