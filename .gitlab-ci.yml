@@ -11,6 +11,7 @@ test_ffi_cpp_linux:
     - nim c -r fragments/math/linalg.nim
     - nim c -r fragments/math/vectors.nim
     - nim c -r fragments/serialization.nim
+    - nim c -r fragments/seqview.nim
   tags:
     - NIM, LINUX
     
