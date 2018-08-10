@@ -22,7 +22,7 @@ proc `[]`*[T](v: SeqView[T]; index: int): T {.inline.} =
     resPtr = cast[ptr T](begin)
   return resPtr[]
 
-proc `[]=`*[T](v: SeqView[T]; index: int; value: T) =
+proc `[]=`*[T](v: SeqView[T]; index: int; value: T) {.inline.} =
   let
     buffer = cast[int](v.root)
     begin = buffer + index * sizeof(T)
