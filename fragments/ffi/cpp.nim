@@ -320,6 +320,23 @@ template `.=`*(obj: CppObject, field, value: untyped): untyped =
   ## Experimental dot accessor (set) for type JsObject.
   ## Sets the value of a property of name `field` in a CppObject `x` to `value`.
   dynamicCppSet(obj, field, value)
+  
+macro dynamicCCall*(field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
+  ## Experimental "method call" operator for type CppProxy.
+  ## Takes the name of a method of the JavaScript object (`field`) and calls
+  ## it with `args` as arguments, returning a CppProxy 
+  ## return types have to be casted unless the type is known using `to(T)`, void returns need `to(void)`
+  var importString: string
+  importString = $field & "(@)"
+
+  result = quote:
+    proc helper(): CppProxy {.importcpp:`importString`, gensym.}
+    helper()
+
+  for idx in 0 ..< args.len:
+    let paramName = ident("param" & $idx)
+    result[0][3].add newIdentDefs(paramName, ident("CppProxy"))
+    result[1].add args[idx].copyNimTree
 
 macro dynamicCppCall*(obj: CppObject, field: untyped, args: varargs[CppProxy, CppFromAst]): CppProxy =
   ## Experimental "method call" operator for type CppProxy.
