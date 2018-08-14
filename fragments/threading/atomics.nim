@@ -148,7 +148,7 @@ else:
 
       Atomic*[T] = object
         when T is Trivial:
-          value: T.atomicType
+          value: T.nonAtomicType
         else:
           nonAtomicValue: T
           guard: AtomicFlag
