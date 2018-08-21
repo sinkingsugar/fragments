@@ -215,6 +215,7 @@ proc `>>` *(x, y: CppProxy): CppProxy {.importcpp:"(# >> #)".}
 proc `and`*(x, y: CppProxy): CppProxy {.importcpp:"(# && #)".}
 proc `or` *(x, y: CppProxy): CppProxy {.importcpp:"(# || #)".}
 proc `not`*(x: CppProxy): CppProxy {.importcpp:"(!#)".}
+proc `-`*(x: CppProxy): CppProxy {.importcpp:"(-#)".}
 proc `in` *(x, y: CppProxy): CppProxy {.importcpp:"(# in #)".}
 
 proc `[]`*(obj: CppProxy, field: auto): CppProxy {.importcpp:getImpl.}
