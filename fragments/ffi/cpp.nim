@@ -387,6 +387,46 @@ iterator cppItems*[T, R](cset: var T): R =
     yield itValue[T, R](it)
     it = it.itPlusPlus
 
+# std string utils
+defineCppType(StdString, "std::string", "string")
+converter toStdString*(s: string): StdString {.inline, noinit.} = cppinit(StdString, s.cstring)
+
+## TUPLEs
+
+# this could be avoided using templates I guess
+defineCppType(StdTuple, "auto", "tuple") # hackish but works fine, altho cannot be used inside a type!
+
+proc makeCppTuple*(arg1: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+proc makeCppTuple*(arg1, arg2: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+proc makeCppTuple*(arg1, arg2, arg3: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+proc makeCppTuple*(arg1, arg2, arg3, arg4: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+proc makeCppTuple*(arg1, arg2, arg3, arg4, arg5: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+
+# std tuple utils
+proc cppTupleGet*[T](index: int; obj: StdTuple): T {.importcpp: "std::get<#>(#)".}
+proc cppTupleSet*(index: int; obj: StdTuple, value: CppObject) {.importcpp: "std::get<#>(#) = #".}
+proc cppTupleSize*(obj: StdTuple): int {.importcpp: "std::tuple_size<decltype(#)>::value".}
+
+# proc len(T: typedesc[tuple|object]): static[int] =
+#   var f: T
+#   for _ in fields(f):
+#     inc result
+
+proc toNimTuple*(t: StdTuple; type1: typedesc): (type1) {.inline.} = 
+  (cppTupleGet[type1](0, t))
+
+proc toNimTuple*(t: StdTuple; type1, type2: typedesc): (type1, type2) {.inline.} = 
+  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t))
+
+proc toNimTuple*(t: StdTuple; type1, type2, type3: typedesc): (type1, type2, type3) {.inline.} = 
+  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t))
+
+proc toNimTuple*(t: StdTuple; type1, type2, type3, type4: typedesc): (type1, type2, type3, type4) {.inline.} = 
+  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t), cppTupleGet[type4](3, t))
+
+proc toNimTuple*(t: StdTuple; type1, type2, type3, type4, type5: typedesc): (type1, type2, type3, type4, type5) {.inline.} = 
+  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t), cppTupleGet[type4](3, t), cppTupleGet[type5](4, t))
+
 when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
@@ -466,5 +506,11 @@ when isMainModule:
       # TODO check macros -> callsite macro
 
       x1.testVir3(11).to(void)
+
+      var cppTuple = makeCppTuple(x.toCpp)
+      cppTupleSet(0, cppTuple, x.toCpp)
+      var tx = cppTupleGet[MyClass](0, cppTuple)
+      echo x.test(1).to(cdouble)
+      var nimTuple = toNimTuple(cppTuple, MyClass)
 
     run()
