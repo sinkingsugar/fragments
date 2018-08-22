@@ -394,38 +394,56 @@ converter toStdString*(s: string): StdString {.inline, noinit.} = cppinit(StdStr
 ## TUPLEs
 
 # this could be avoided using templates I guess
-defineCppType(StdTuple, "auto", "tuple") # hackish but works fine, altho cannot be used inside a type!
+# defineCppType(StdTuple, "auto", "tuple") # hackish but works fine, altho cannot be used inside a type!
+type
+  StdTuple2* {.importcpp: "std::tuple", header: "tuple".} [T1, T2] = object
+  StdTuple3* {.importcpp: "std::tuple", header: "tuple".} [T1, T2, T3] = object
+  StdTuple4* {.importcpp: "std::tuple", header: "tuple".} [T1, T2, T3, T4] = object
+  StdTuple5* {.importcpp: "std::tuple", header: "tuple".} [T1, T2, T3, T4, T5] = object
+  StdTuple = StdTuple2 | StdTuple3 | StdTuple4 | StdTuple5
 
-proc makeCppTuple*(arg1: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
-proc makeCppTuple*(arg1, arg2: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
-proc makeCppTuple*(arg1, arg2, arg3: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
-proc makeCppTuple*(arg1, arg2, arg3, arg4: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
-proc makeCppTuple*(arg1, arg2, arg3, arg4, arg5: CppProxy): StdTuple {.importcpp: "std::make_tuple(@)".}
+proc makeCppTuple*(arg1, arg2: auto): StdTuple2[type(arg1), type(arg2)] {.importcpp: "std::make_tuple(@)", header: "tuple".}
+proc makeCppTuple*(arg1, arg2, arg3: auto): StdTuple3[type(arg1), type(arg2), type(arg3)] {.importcpp: "std::make_tuple(@)", header: "tuple".}
+proc makeCppTuple*(arg1, arg2, arg3, arg4: auto): StdTuple4[type(arg1), type(arg2), type(arg3), type(arg4)] {.importcpp: "std::make_tuple(@)", header: "tuple".}
+proc makeCppTuple*(arg1, arg2, arg3, arg4, arg5: auto): StdTuple5[type(arg1), type(arg2), type(arg3), type(arg4), type(arg5)] {.importcpp: "std::make_tuple(@)", header: "tuple".}
 
 # std tuple utils
-proc cppTupleGet*[T](index: int; obj: StdTuple): T {.importcpp: "std::get<#>(#)".}
-proc cppTupleSet*(index: int; obj: StdTuple, value: CppObject) {.importcpp: "std::get<#>(#) = #".}
-proc cppTupleSize*(obj: StdTuple): int {.importcpp: "std::tuple_size<decltype(#)>::value".}
+proc cppTupleGet*[T](index: int; obj: CppProxy): T {.importcpp: "std::get<#>(#)", header: "tuple".}
+proc cppTupleSet*(index: int; obj: CppProxy, value: CppObject) {.importcpp: "std::get<#>(#) = #", header: "tuple".}
+proc cppTupleSize*(obj: CppProxy): int {.importcpp: "std::tuple_size<decltype(#)>::value", header: "tuple".}
 
 # proc len(T: typedesc[tuple|object]): static[int] =
 #   var f: T
 #   for _ in fields(f):
 #     inc result
 
-proc toNimTuple*(t: StdTuple; type1: typedesc): (type1) {.inline.} = 
-  (cppTupleGet[type1](0, t))
 
-proc toNimTuple*(t: StdTuple; type1, type2: typedesc): (type1, type2) {.inline.} = 
-  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t))
+proc toNimTuple*[T1, T2](t: StdTuple2[T1, T2]): (T1, T2) =
+  # we need to call cpp constructor, cos if not our tuple state will be uninitialized (if contains cpp objects that is)
+  discard cppctor(addr(result[0]))
+  discard cppctor(addr(result[1]))
+  result = (cppTupleGet[T1](0, t.toCpp), cppTupleGet[T2](1, t.toCpp))
 
-proc toNimTuple*(t: StdTuple; type1, type2, type3: typedesc): (type1, type2, type3) {.inline.} = 
-  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t))
+proc toNimTuple*[T1, T2, T3](t: StdTuple3[T1, T2, T3]): (T1, T2, T3) =
+  discard cppctor(addr(result[0]))
+  discard cppctor(addr(result[1]))
+  discard cppctor(addr(result[2]))
+  (cppTupleGet[T1](0, t.toCpp), cppTupleGet[T2](1, t.toCpp), cppTupleGet[T3](2, t.toCpp))
 
-proc toNimTuple*(t: StdTuple; type1, type2, type3, type4: typedesc): (type1, type2, type3, type4) {.inline.} = 
-  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t), cppTupleGet[type4](3, t))
+proc toNimTuple*[T1, T2, T3, T4](t: StdTuple4[T1, T2, T3, T4]): (T1, T2, T3, T4) =
+  discard cppctor(addr(result[0]))
+  discard cppctor(addr(result[1]))
+  discard cppctor(addr(result[2]))
+  discard cppctor(addr(result[3]))
+  (cppTupleGet[T1](0, t.toCpp), cppTupleGet[T2](1, t.toCpp), cppTupleGet[T3](2, t.toCpp), cppTupleGet[T4](3, t.toCpp))
 
-proc toNimTuple*(t: StdTuple; type1, type2, type3, type4, type5: typedesc): (type1, type2, type3, type4, type5) {.inline.} = 
-  (cppTupleGet[type1](0, t), cppTupleGet[type2](1, t), cppTupleGet[type3](2, t), cppTupleGet[type4](3, t), cppTupleGet[type5](4, t))
+proc toNimTuple*[T1, T2, T3, T4, T5](t: StdTuple5[T1, T2, T3, T4, T5]): (T1, T2, T3, T4, T5) =
+  discard cppctor(addr(result[0]))
+  discard cppctor(addr(result[1]))
+  discard cppctor(addr(result[2]))
+  discard cppctor(addr(result[3]))
+  discard cppctor(addr(result[4]))
+  (cppTupleGet[T1](0, t.toCpp), cppTupleGet[T2](1, t.toCpp), cppTupleGet[T3](2, t.toCpp), cppTupleGet[T4](3, t.toCpp), cppTupleGet[T5](4, t.toCpp))
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
@@ -507,10 +525,10 @@ when isMainModule:
 
       x1.testVir3(11).to(void)
 
-      var cppTuple = makeCppTuple(x.toCpp)
-      cppTupleSet(0, cppTuple, x.toCpp)
-      var tx = cppTupleGet[MyClass](0, cppTuple)
+      var cppTuple = makeCppTuple(x, y)
+      cppTupleSet(0, cppTuple.toCpp, x.toCpp)
+      var tx = cppTupleGet[MyClass](0, cppTuple.toCpp)
       echo x.test(1).to(cdouble)
-      var nimTuple = toNimTuple(cppTuple, MyClass)
+      var nimTuple = cppTuple.toNimTuple()
 
     run()
