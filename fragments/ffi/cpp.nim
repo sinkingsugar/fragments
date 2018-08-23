@@ -95,7 +95,7 @@ const
   setImpl = "#[#] = #"
   getImpl = "#[#]"
 
-macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = nil): untyped =
+macro defineCppType*(name: untyped, importCppStr: string, headerStr: string = ""): untyped =
   result = nnkStmtList.newTree()
 
   result.add quote do:
