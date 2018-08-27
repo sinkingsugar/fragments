@@ -80,9 +80,12 @@ else:
       var str: string
       when defined windows:
         let win_incl = ($lib).replace("/", "\\").quoteShell
-        str = win_incl
+        when defined vcc:
+          str = win_incl
+        else:
+          str = "-l" & win_incl
       else:
-        str = $lib
+        str = "-l" & $lib
       
       result.add nnkPragma.newTree(nnkExprColonExpr.newTree(newIdentNode("passL"), newLit(str)))
 
