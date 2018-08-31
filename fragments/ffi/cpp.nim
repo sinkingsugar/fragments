@@ -448,6 +448,17 @@ proc toNimTuple*[T1, T2, T3, T4, T5](t: StdTuple5[T1, T2, T3, T4, T5]): (T1, T2,
   discard cppctor(addr(result[4]))
   (cppTupleGet[T1](0, t.toCpp), cppTupleGet[T2](1, t.toCpp), cppTupleGet[T3](2, t.toCpp), cppTupleGet[T4](3, t.toCpp), cppTupleGet[T5](4, t.toCpp))
 
+# some issues generating static[int] in cpp
+type StdArray* {.importcpp: "std::array<'0, '1>", header: "array".} [T; S: static[int]] = object
+proc `[]`*[T; S: static[int]](v: StdArray[T, S]; index: int): T {.inline.} = v.toCpp[index].to(T)
+proc `[]=`*[T; S: static[int]](v: StdArray[T, S]; index: int; value: T) {.inline.} = v.toCpp[index] = value
+
+template `@`*[SIZE](a: array[SIZE, bool]): StdArray = 
+  var result: StdArray[bool, a.len]
+  for i in 0..a.high: 
+    result[i] = a[i]
+  result
+
 when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
