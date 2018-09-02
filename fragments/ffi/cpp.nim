@@ -140,41 +140,46 @@ when not defined(js):
     """].}
 
 # normal destructor for value types
-proc cppdtor[T: CppObject](x: var T) {.importcpp:"callCppPtrDestructor(#)".}
+proc internalCppdtor[T: CppObject](x: var T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for ptrs
-proc cppdtor[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
+proc internalCppdtor[T: CppObject](x: ptr T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # magic placement new compatible destructor for refs
-proc cppdtor[T: CppObject](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
+proc internalCppdtor[T: CppObject](x: ref T) {.importcpp:"callCppPtrDestructor(#)".}
 
 # normal destructor for value types
-proc cppdtor[T: not CppObject](x: T) {.importcpp:"#.~'1()".}
+proc internalCppdtor[T: not CppObject](x: T) {.importcpp:"#.~'1()".}
 
 # magic placement new compatible destructor for ptrs
-proc cppdtor[T: not CppObject](x: ptr T) = x[].cppdtor()
+proc internalCppdtor[T: not CppObject](x: ptr T) = x[].internalCppdtor()
 
 # magic placement new compatible destructor for refs
-proc cppdtor[T: not CppObject](x: ref T) = x[].cppdtor()
+proc internalCppdtor[T: not CppObject](x: ref T) = x[].internalCppdtor()
 
 proc cppdelptr*[T](x: ptr T) =
-  x.cppdtor()
+  x.internalCppdtor()
   dealloc(x)
+
+proc cppdtor*[T](x: ptr T) =
+  x.internalCppdtor()
+
+proc cppmove*[T](x: T): T {.importcpp:"std::move(#)".}
 
 # refs
 
 template cppnewref*(myRef: ref): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdtor())
+  new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor()
 
 # I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
 
 template cppnewref*(myRef: ref, arg0: typed): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdtor())
+  new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor(arg0)
 
 template cppnewref*(myRef: ref, arg0: typed, arg1: typed): untyped =
-  new(myRef, proc(self: type(myRef)) = self.cppdtor())
+  new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor(arg0, arg1)
 
 # ptr
@@ -485,7 +490,7 @@ when isMainModule:
       cppnewptr nxp
       var y = cast[ptr MyClass](alloc0(sizeof(MyClass)))
       var w: ref MyClass
-      new(w, proc(self: ref MyClass) = self.cppdtor())
+      new(w, proc(self: ref MyClass) = self.internalCppdtor())
       var z = y.cppctor(1)
       var q = w.cppctor(1)
       
@@ -520,8 +525,8 @@ when isMainModule:
       echo x.test2(3).to(cint)
 
       z.cppdtor()
-      x.cppdtor()
-      nx.cppdtor()
+      x.internalCppdtor()
+      nx.internalCppdtor()
       cppdelptr nxp
 
       var x1 = cppinit(MyClass2, 1)
