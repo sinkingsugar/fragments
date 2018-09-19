@@ -27,8 +27,15 @@ template newShared*(T: typedesc; destructor: untyped): SharedPtr[T] =
   let p = newptr(T)
   construct(p, deleter)
 
+proc `[]`*(self: SharedPtr): ptr SharedPtr.T {.importcpp: "#.get()".}
+
+converter toPtr*(self: SharedPtr): ptr SharedPtr.T = self[]
+
 when isMainModule:
   type Foo = object
-  proc kill(self: var Foo) {.nimcall.} = echo "bye"
+  proc kill(self: var Foo) = echo "bye"
   var x = newShared(Foo, kill)
+  echo cast[int](x[])
+  proc test(p: ptr Foo) = discard
+  x.test()
   
