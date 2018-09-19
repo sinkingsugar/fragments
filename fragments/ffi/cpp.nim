@@ -168,17 +168,17 @@ proc cppmove*[T](x: T): T {.importcpp:"std::move(#)".}
 
 # refs
 
-template cppnewref*(myRef: ref): untyped =
+proc cppnewref*(myRef: var ref) =
   new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor()
 
 # I could not find a way to avoid generating one of the following per each arg yet (so far varargs, typed, untyped didn't work)
 
-template cppnewref*(myRef: ref, arg0: typed): untyped =
+proc cppnewref*(myRef: var ref, arg0: auto) =
   new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor(arg0)
 
-template cppnewref*(myRef: ref, arg0: typed, arg1: typed): untyped =
+proc cppnewref*(myRef: var ref, arg0, arg1: auto) =
   new(myRef, proc(self: type(myRef)) = self.internalCppdtor())
   myRef.cppctor(arg0, arg1)
 
