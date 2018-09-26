@@ -1,5 +1,5 @@
 # Package
-version     = "0.1.18"
+version     = "0.1.19"
 author      = "fragcolor-xyz"
 description = "Our very personal collection of utilities"
 license     = "MIT"
