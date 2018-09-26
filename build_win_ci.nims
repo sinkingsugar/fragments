@@ -20,7 +20,7 @@ for flavor in vsFlavors:
     varScript = "C:\\" & flavor & "\\Common7\\Tools\\VsDevCmd.bat"
     break
 
-doAssert(varScript != nil)
+doAssert(varScript != "")
 
 let 
   buildScript = """
