@@ -457,7 +457,7 @@ proc toNimTuple*[T1, T2, T3, T4, T5](t: StdTuple5[T1, T2, T3, T4, T5]): (T1, T2,
 # some issues generating static[int] in cpp
 type StdArray* {.importcpp: "std::array<'0, '1>", header: "array".} [T; S: static[int]] = object
 proc `[]`*[T; S: static[int]](v: StdArray[T, S]; index: int): T {.inline.} = v.toCpp[index].to(T)
-proc `[]=`*[T; S: static[int]](v: StdArray[T, S]; index: int; value: T) {.inline.} = v.toCpp[index] = value
+proc `[]=`*[T; S: static[int]](v: var StdArray[T, S]; index: int; value: T) {.inline.} = v.toCpp[index] = value
 
 template `@`*[SIZE](a: array[SIZE, bool]): StdArray = 
   var result: StdArray[bool, a.len]
