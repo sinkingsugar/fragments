@@ -465,22 +465,10 @@ template `@`*[SIZE](a: array[SIZE, bool]): StdArray =
     result[i] = a[i]
   result
 
-{.emit: """
-std::string getCurrentCppExceptionMsg()
-{
-  auto x = std::current_exception();
-  try { std::rethrow_exception(x); }
-  catch (const std::exception& e) { return e.what(); }
-  catch (const std::string& s) { return s; }
-  catch (...) { return ""; }
-}
-""".}
+type
+  StdException* {.importcpp: "std::exception", header: "<exception>".} = object
 
-proc getCurrentCppExceptionMsgInternal(): StdString {.importcpp: "getCurrentCppExceptionMsg()".}
-
-proc getCurrentCppExceptionMsg*(): string =
-  let msg = getCurrentCppExceptionMsgInternal()
-  return $msg.toCpp().c_str().to(cstring)
+proc what*(s: StdException): cstring {.importcpp: "((char *)#.what())".}
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
