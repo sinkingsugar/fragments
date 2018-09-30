@@ -4,3 +4,7 @@ package:
 
 source:
   path: ../..
+
+requirements:
+  run:
+    - nim
