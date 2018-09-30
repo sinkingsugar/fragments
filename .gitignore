@@ -36,7 +36,6 @@
 *.pdb
 
 Temp/
-bin/
 Bin/
 ipch/
 obj/
