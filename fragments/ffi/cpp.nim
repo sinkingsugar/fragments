@@ -426,7 +426,6 @@ proc cppTupleSize*(obj: CppProxy): int {.importcpp: "std::tuple_size<decltype(#)
 #   for _ in fields(f):
 #     inc result
 
-
 proc toNimTuple*[T1, T2](t: StdTuple2[T1, T2]): (T1, T2) =
   # we need to call cpp constructor, cos if not our tuple state will be uninitialized (if contains cpp objects that is)
   discard cppctor(addr(result[0]))

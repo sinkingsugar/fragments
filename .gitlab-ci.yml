@@ -1,7 +1,7 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   
-test_ffi_cpp_linux:
+test:linux:
   script:
     - nim cpp --cincludes:. -r fragments/ffi/cpp.nim
     - nim c -r fragments/dsl.nim
@@ -15,7 +15,7 @@ test_ffi_cpp_linux:
   tags:
     - NIM, LINUX
     
-test_ffi_cpp_win_vcc:
+test:windows:
   script:
     - nim e build_win_ci.nims # refer to build_win_ci.nims
   tags:
@@ -29,7 +29,7 @@ test:macos:
     - export MACOSX_DEPLOYMENT_TARGET=10.13
     - conda create -n nim_testing -c fragcolor nim
     - export PATH="$PATH:$HOME/miniconda3/envs/nim_testing/bin"
-    - nim cpp --cincludes:. -r fragments/ffi/cpp.nim
+    - nim cpp --passC:-std=c++14 --cincludes:. -r fragments/ffi/cpp.nim
     - nim cpp -r fragments/ffi/ios.nim
     - nim c -r fragments/dsl.nim
     - nim c --threads:on -r fragments/threading/threading_primitives.nim
