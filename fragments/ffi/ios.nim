@@ -21,8 +21,8 @@ else:
 
 const
   xcodeMinVersion* {.strdefine.} = "10.0"
-  xcodePlatform* {.strdefine.} = "iphoneos"
-  xcodeArch* {.strdefine.} = "arm64"
+  xcodePlatform* {.strdefine.} = "iphonesimulator"
+  xcodeArch* {.strdefine.} = "x86_64"
 
 static:
   doAssert xcodePlatform in platforms
