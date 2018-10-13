@@ -1,6 +1,15 @@
 # collection of utilities to deal with iOS
 import osproc, strformat, macros
 
+const architectures = [
+  "armv7",
+  "armv7s",
+  "arm64",
+  "i386,",
+  "x86_64",
+  "armv7k"
+]
+
 const platforms = [
   "iphoneos",
   "iphonesimulator",
@@ -26,6 +35,7 @@ const
 
 static:
   doAssert xcodePlatform in platforms
+  doAssert xcodeArch in architectures
 
 when xcodePlatform == "iphoneos" or xcodePlatform == "iphonesimulator":
   const xcodeMinVersionFull = "-m" & xcodePlatform & "-version-min=" & xcodeMinVersion
@@ -60,3 +70,5 @@ macro xcodeFrameworks*(defines: varargs[string]): untyped =
 
 when isMainModule and defined(osx):
   xcodeFrameworks("Foundation")
+
+  echo "Hello world"
