@@ -25,8 +25,14 @@ when defined bitcode:
 
 when defined objcArc:
   {.passC: "-fobjc-abi-version=2 -fobjc-arc".}
+  {.passL: "-fobjc-abi-version=2 -fobjc-arc".}
 else:
   {.passC: "-fobjc-abi-version=2 -fno-objc-arc".}
+  {.passL: "-fobjc-abi-version=2 -fno-objc-arc".}
+
+when defined release:
+  {.passC: "-fvisibility=hidden".}
+  {.passL: "-fvisibility=hidden".}
 
 const
   xcodeMinVersion* {.strdefine.} = "10.0"
@@ -54,10 +60,10 @@ const
   archFull = "-arch " & xcodeArch
 
 {.passC: sysrootFull.}
-{.passC: xcodeMinVersionFull.}
-{.passC: archFull.}
 {.passL: sysrootFull.}
+{.passC: xcodeMinVersionFull.}
 {.passL: xcodeMinVersionFull.}
+{.passC: archFull.}
 {.passL: archFull.}
 
 macro xcodeFrameworks*(defines: varargs[string]): untyped =
