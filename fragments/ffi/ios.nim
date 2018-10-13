@@ -23,6 +23,7 @@ else:
 const
   xcodeMinVersion* {.strdefine.} = "10.0"
   xcodePlatform* {.strdefine.} = "iphoneos"
+  xcodeArch* {.strdefine.} = "arm64"
 
 static:
   doAssert xcodePlatform in platforms
@@ -41,13 +42,14 @@ elif xcodePlatform == "watchsimulator":
 const
   sysrootStr = gorge fmt"xcodebuild -version -sdk {xcodePlatform} Path"
   sysrootFull = "-isysroot " & sysrootStr
+  archFull = "-arch " & xcodeArch
 
 {.passC: sysrootFull.}
 {.passC: xcodeMinVersionFull.}
-{.passC: "-arch arm64".} # TODO
+{.passC: archFull.}
 {.passL: sysrootFull.}
 {.passL: xcodeMinVersionFull.}
-{.passL: "-arch arm64".} # TODO
+{.passL: archFull.}
 
 macro xcodeFrameworks*(defines: varargs[string]): untyped =
   result = nnkStmtList.newTree()
