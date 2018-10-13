@@ -45,6 +45,9 @@ const
 {.passC: sysrootFull.}
 {.passC: xcodeMinVersionFull.}
 {.passC: "-arch arm64".} # TODO
+{.passL: sysrootFull.}
+{.passL: xcodeMinVersionFull.}
+{.passL: "-arch arm64".} # TODO
 
 macro xcodeFrameworks*(defines: varargs[string]): untyped =
   result = nnkStmtList.newTree()
