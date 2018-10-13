@@ -30,8 +30,7 @@ test:macos:
     - conda create -n nim_testing -c fragcolor nim
     - export PATH="$PATH:$HOME/miniconda3/envs/nim_testing/bin"
     - nim cpp --passC:-std=c++14 --cincludes:. -r fragments/ffi/cpp.nim
-    - nim cpp --app:lib -o:ios.a fragments/ffi/ios.nim
-    - lipo -info ios.a
+    - nim cpp -d:ios fragments/ffi/ios.nim
     - nim c -r fragments/dsl.nim
     - nim c --threads:on -r fragments/threading/threading_primitives.nim
     - nim c --threads:on -r fragments/threading/atomics.nim
