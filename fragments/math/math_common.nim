@@ -32,13 +32,13 @@ func linearToSRgb*(value: SomeFloat): SomeFloat =
   if value < 0.0031308: value * 12.92
   else: 1.055 * pow(value, 1.0 / 2.4) - 0.055
 
-func zigZagEncode*(value: SomeSignedInt): SomeSignedInt =
+func zigZagEncode*(value: BiggestInt): BiggestUInt =
   ## Maps negative values to positive values while going back and forth
   let bits = sizeof(value) * 8 - 1
-  return (value shl 1) xor (value shr bits)
+  return ((value shl 1) xor ashr(value, bits)).BiggestUInt
 
-func zigZagDecode*(value: SomeSignedInt): SomeSignedInt =
-  return (value shr 1) xor -(value and 1)
+func zigZagDecode*(value: BiggestUInt): BiggestInt =
+  return (value.BiggestInt shr 1) xor -(value.BiggestInt and 1)
 
 func gaussian*(value, mean, standardDeviation: SomeFloat): SomeFloat =
   const normalizationFactor = 1.0 / sqrt(2.0 * PI)

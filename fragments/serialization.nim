@@ -6,14 +6,15 @@ const
   highBit = 0b1000_0000
   mask = 0b0111_1111
 
-proc writePackedUInt*(stream: Stream; value: BiggestUInt) =
+proc writePackedUInt*(stream: Stream; value: SomeUnsignedInt) =
   var remaining = value
-  while remaining >= highBit.uint64:
+  while remaining >= highBit.SomeUnsignedInt:
+    stream.write((remaining or highBit).byte)
     remaining = remaining shr 7
-  stream.write(remaining.byte);
+  stream.write(remaining.byte)
 
-proc writePackedInt*(stream: Stream; value: BiggestInt) =
-  stream.writePackedUInt(value.zigZagEncode().BiggestUInt)
+proc writePackedInt*(stream: Stream; value: SomeInteger) =
+  stream.writePackedUInt(value.zigZagEncode())
 
 proc readPackedUInt*(stream: Stream): BiggestUInt =
   var 
@@ -22,14 +23,14 @@ proc readPackedUInt*(stream: Stream): BiggestUInt =
 
   while true:
     currentByte = stream.readUInt8()
-    result = result or ((currentByte and mask) shl shift)
+    result = result or ((currentByte and mask).BiggestUInt shl shift)
     shift += 7
     if (currentByte and highBit) == 0:
       break
 
 proc readPackedInt*(stream: Stream): BiggestInt =
   var x = stream.readPackedUInt()
-  return x.BiggestInt.zigZagDecode()
+  return x.zigZagDecode().BiggestInt
 
 template serializable*(shouldSerialize: bool = true): untyped {.pragma.}
 
@@ -282,9 +283,9 @@ proc deserializeValue*[T](value: var ref T; context: SerializationContext) =
 proc serializeValue*(value: Blittable; context: SerializationContext) =
   context.stream.write(value)
 
-proc deserializeValue*[T: Blittable](value: var T; context: SerializationContext) =
+proc deserializeValue*(value: var Blittable; context: SerializationContext) =
   #context.stream.read(value) # Internal
-  if context.stream.readData(addr(value), sizeof(T)) != sizeof(T):
+  if context.stream.readData(addr(value), sizeof(Blittable)) != sizeof(Blittable):
     raise newException(IOError, "cannot read from stream")
 
 # Lists
@@ -296,7 +297,7 @@ proc serializeValue*[T](collection: seq[T]; context: SerializationContext) =
 proc deserializeValue*[T](collection: var seq[T]; context: SerializationContext) =
   # TODO: seq[Blittable]
   let count = context.stream.readPackedInt()
-  newSeq(collection, count)
+  collection.setLen(count)
   # when T.isBlittable():
   #   let length = sizeof(T) * count
   #   if context.stream.readData(addr collection[0], length) != length:
@@ -317,7 +318,7 @@ proc deserializeValue*(value: var string; context: SerializationContext) =
     value = context.stream.readStr(length.int)
   else: value = ""
 
-static:
+when isMainModule:
   type
     Distint = distinct int
     NonBlittable = object
@@ -328,8 +329,14 @@ static:
     Ptr = ptr int
     Seq = seq[int]
 
+  assert float is Serializable
+  assert string is Serializable
+  assert Ref is Serializable
+  assert Ptr is Serializable
+  assert Seq is Serializable
+
   assert float is Blittable
-  assert Distint.isBlittable # TODO: concept causes SIGSEGV?
+  static: assert Distint.isBlittable # TODO: concept causes SIGSEGV?
   assert Tuple isnot Blittable
   assert NonBlittable isnot Blittable
   assert string isnot Blittable
@@ -351,14 +358,21 @@ static:
   assert float is (Blittable and not Inheritable)
   assert (ref float) is (ref Blittable)
 
-when isMainModule:
   var stream = newStringStream()
     
   stream.writePackedInt(42)
+  stream.writePackedInt(0)
+  stream.writePackedInt(int.high)
+  stream.writePackedInt(int.low)
   stream.writePackedUInt(42)
+  stream.writePackedUInt(0)
   stream.setPosition(0)
   assert stream.readPackedInt() == 42
+  assert stream.readPackedInt() == 0
+  assert stream.readPackedInt() == int.high
+  assert stream.readPackedInt() == int.low
   assert stream.readPackedUInt() == 42
+  assert stream.readPackedUInt() == 0
 
   type
     Test2 = object
@@ -374,7 +388,7 @@ when isMainModule:
       r*: Test2
       p*: ref float
       t1*: Test3
-      t2* {.serializable: false.}: tuple[a: int]
+      t2*: tuple[a: int]
       t3*: tuple[a: ref float]
 
   var
@@ -388,9 +402,14 @@ when isMainModule:
   stream.setPosition(0)
   serialize(r1, context)
 
-  context = newSerializationContext(stream)
   context.stream = stream  
   stream.setPosition(0)
   deserialize(r2, context)
 
-  echo r2
+  r1.a2 = 0
+
+  echo r1
+  echo r2  
+
+  assert $r1 == $r2
+
