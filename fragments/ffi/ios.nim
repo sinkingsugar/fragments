@@ -54,5 +54,5 @@ elif xcodePlatform == "watchsimulator":
 
 when isMainModule and defined(osx):
   static:
-    echo getSysroot(Platform.iphoneOs)
-    echo getSdkVersion(Platform.iphoneOs)
+    echo getSysroot("iphoneos")
+    echo getSdkVersion("iphoneos")
