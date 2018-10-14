@@ -7,4 +7,4 @@ source:
 
 requirements:
   run:
-    - nim
+    - nim ==0.19.1
