@@ -290,13 +290,13 @@ proc deserializeValue*(value: var Blittable; context: SerializationContext) =
 
 # Lists
 proc serializeValue*[T](collection: seq[T]; context: SerializationContext) =
-  context.stream.writePackedInt(collection.len)
+  context.stream.writePackedUInt(collection.len.uint)
   for item in collection:
     item.serialize(context)
 
 proc deserializeValue*[T](collection: var seq[T]; context: SerializationContext) =
   # TODO: seq[Blittable]
-  let count = context.stream.readPackedInt()
+  let count = context.stream.readPackedUInt()
   collection.setLen(count)
   # when T.isBlittable():
   #   let length = sizeof(T) * count
@@ -308,13 +308,13 @@ proc deserializeValue*[T](collection: var seq[T]; context: SerializationContext)
 
 # Strings
 proc serializeValue*(value: string; context: SerializationContext) =
-  context.stream.writePackedInt(value.len)
+  context.stream.writePackedUInt(value.len.uint)
   if value.len > 0:
     context.stream.write(value)
 
 proc deserializeValue*(value: var string; context: SerializationContext) =
-  let length = context.stream.readPackedInt()
-  if length > 0:
+  let length = context.stream.readPackedUInt()
+  if length.int > 0:
     value = context.stream.readStr(length.int)
   else: value = ""
 
