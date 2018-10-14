@@ -19,16 +19,18 @@ const platforms = [
   "watchsimulator"
 ]
 
-when defined bitcode:
+when defined noBitcode:
+  discard
+else:
   {.passC: "-fembed-bitcode".}
   {.passL: "-fembed-bitcode".}
 
-when defined objcArc:
-  {.passC: "-fobjc-abi-version=2 -fobjc-arc".}
-  {.passL: "-fobjc-abi-version=2 -fobjc-arc".}
-else:
+when defined noObjcARC:
   {.passC: "-fobjc-abi-version=2 -fno-objc-arc".}
   {.passL: "-fobjc-abi-version=2 -fno-objc-arc".}
+else:
+  {.passC: "-fobjc-abi-version=2 -fobjc-arc".}
+  {.passL: "-fobjc-abi-version=2 -fobjc-arc".}
 
 when defined release:
   {.passC: "-fvisibility=hidden".}
