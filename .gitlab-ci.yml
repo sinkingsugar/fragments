@@ -1,7 +1,7 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   
-test_ffi_cpp_linux:
+test:linux:
   script:
     - nim cpp --cincludes:. -r fragments/ffi/cpp.nim
     - nim c -r fragments/dsl.nim
@@ -15,8 +15,30 @@ test_ffi_cpp_linux:
   tags:
     - NIM, LINUX
     
-test_ffi_cpp_win_vcc:
+test:windows:
   script:
     - nim e build_win_ci.nims # refer to build_win_ci.nims
   tags:
     - NIM, WIN10
+
+test:macos:
+  stage: test
+  before_script:
+    - conda env remove -n nim_testing || true
+  script:
+    - export MACOSX_DEPLOYMENT_TARGET=10.13
+    - conda create -n nim_testing -c fragcolor nim
+    - export PATH="$PATH:$HOME/miniconda3/envs/nim_testing/bin"
+    - nim cpp --passC:-std=c++14 --cincludes:. -r fragments/ffi/cpp.nim
+    - nim cpp -o:ios-test fragments/ffi/ios.nim
+    - xcrun simctl spawn booted ./ios-test
+    - nim c -r fragments/dsl.nim
+    - nim c --threads:on -r fragments/threading/threading_primitives.nim
+    - nim c --threads:on -r fragments/threading/atomics.nim
+    - nim cpp --threads:on -r fragments/threading/atomics.nim
+    - nim c -r fragments/math/linalg.nim
+    - nim c -r fragments/math/vectors.nim
+    - nim c -r fragments/serialization.nim
+    - nim c -r fragments/seqview.nim
+  tags:
+    - MACOS, CONDA
