@@ -1,3 +1,2 @@
-mkdir %PREFIX%\dist\fragments
-xcopy . %PREFIX%\dist\fragments /s /e
-copy conda\fragments\.fragments-post-link.bat %PREFIX%\Scripts\
+mkdir %PREFIX%\dist\pkgs\fragments-#head
+xcopy . %PREFIX%\dist\pkgs\fragments-#head /s /e
