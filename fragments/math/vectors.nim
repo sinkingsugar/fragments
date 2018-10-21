@@ -3,7 +3,7 @@ import macros, strutils, typetraits, tables, math
 type
   Wide*[T; width: static[int]] = object
     ## A super-scaler primitive type, used in vectorized code
-    elements*: array[4, T]
+    elements*: array[width, T]
 
   SomeWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
