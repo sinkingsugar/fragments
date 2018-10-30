@@ -15,14 +15,14 @@ type
     state: AtomicFlag
 
   ManualResetEvent* = object
-    isSet: bool
     lock: Lock
     condition: Cond
+    isSet: bool
 
   AutoResetEvent* = object
-    isSet: bool
     lock: Lock
     condition: Cond
+    isSet: bool
 
   Event = ManualResetEvent | AutoResetEvent
 
