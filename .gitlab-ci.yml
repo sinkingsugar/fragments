@@ -3,17 +3,18 @@ variables:
   
 test:linux:
   script:
-    - nim cpp --cincludes:. -r fragments/ffi/cpp.nim
-    - nim c -r fragments/dsl.nim
-    - nim c --threads:on -r fragments/threading/threading_primitives.nim
-    - nim c --threads:on -r fragments/threading/atomics.nim
-    - nim cpp --threads:on -r fragments/threading/atomics.nim
-    - nim c -r fragments/math/linalg.nim
-    - nim c -r fragments/math/vectors.nim
-    - nim c -r fragments/serialization.nim
-    - nim c -r fragments/seqview.nim
+    - docker build -t fragments-test --build-arg USER_ID=`id -u` --build-arg GROUP_ID=`id -g` .
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim cpp --cincludes:. -r fragments/ffi/cpp.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/dsl.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c --threads:on -r fragments/threading/threading_primitives.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c --threads:on -r fragments/threading/atomics.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim cpp --threads:on -r fragments/threading/atomics.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/math/linalg.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/math/vectors.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/serialization.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/seqview.nim
   tags:
-    - NIM, LINUX
+    - DOCKER, LINUX
     
 test:windows:
   script:
