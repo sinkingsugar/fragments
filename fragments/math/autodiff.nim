@@ -113,7 +113,7 @@ func pop(self: var Stack; T: typedesc): T =
 
 type
   Context = ref object
-    adjoint: NimNode
+    stack: NimNode
     returnSym: NimNode
     resultSym: NimNode
 
@@ -165,31 +165,34 @@ proc genCall(context: Context, n: NimNode, seed: NimNode): Result =
 
   result.adjoint = tangentCall
 
-proc genIf(context: Context, n: NimNode, seed: NimNode): Result =
+proc genIf(context: Context, primal: NimNode, seed: NimNode): Result =
   
   let
-    adjoint = n.copyNimNode()
+    adjoint = primal.copyNimNode()
+    stack = context.stack
 
-  for i, child in n:
-    let adjointChild = child.copyNimNode()
+  for i, primalChild in primal:
+    let adjointChild = primalChild.copyNimNode()
     adjoint.add(adjointChild)
 
-    if child.kind != nnkElse:
-      let
-        condition = child[0]
-        conditionSym = genSym(nskLet)
+    if primalChild.kind != nnkElse:
+      let condition = primalChild[0]
 
-      child[0] = quote do:
-        let `conditionSym` = `condition`
-        `conditionSym`
+      # Evaluate the branch condition and save the result
+      primalChild[0] = quote do:
+        let didEnter = `condition`
+        `stack`.push(didEnter)
+        didEnter
 
-      adjointChild.add(`conditionSym`)
+      # Load the result and take the same path
+      adjointChild.add quote do:
+        `stack`.pop(bool)
 
-    let r = context.genNode(child[^1], seed)
-    child[^1] = r.primal
+    let r = context.genNode(primalChild[^1], seed)
+    primalChild[^1] = r.primal
     adjointChild.add(r.adjoint)
 
-  return (n, adjoint)
+  return (primal, adjoint)
 
 proc genNode(context: Context, n: NimNode, seed: NimNode): Result =
 
@@ -234,12 +237,14 @@ macro gradient*(body: typed): untyped =
   
   let
     context = new Context
+    stack = genSym(nskVar)
     returnSym = genSym(nskLabel)
     primalResultSym = genSym(nskVar)
     primalResultType = body.getType()
 
   context.returnSym = returnSym
   context.resultSym = primalResultSym
+  context.stack = stack
 
   let
     seed = newLit(1.0)
@@ -249,7 +254,9 @@ macro gradient*(body: typed): untyped =
   echo astGenRepr adjoint
 
   return quote do:
-    var `primalResultSym`: `primalResultType`
+    var
+      `primalResultSym`: `primalResultType`
+      `stack`: Stack
     block `returnSym`:
       discard `primal`
       `adjoint`
