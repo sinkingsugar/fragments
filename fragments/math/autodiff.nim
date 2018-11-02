@@ -1,5 +1,7 @@
 
 
+# TODO: If a value/symbol is defined in the same loop level as a usage, it doesn't need to be loaded from the stack
+
 # func 𝒟*[T: SomeFloat](f: proc(x: T): T): proc(x: T): T = discard
 # func 𝒟*[T: SomeFloat](f: proc(x, y: T): T): proc(x, y: T): (T, T) = discard
 # func 𝒟*[T: SomeFloat](f: proc(x, y, z: T): T): proc(x, y, z: T): (T, T, T) = discard
@@ -116,6 +118,7 @@ type
     stack: NimNode
     returnSym: NimNode
     resultSym: NimNode
+    independent: NimNode
 
 proc getTangent(sym: NimNode): NimNode =
   if $sym == "foo":
@@ -145,25 +148,40 @@ type
 
 proc genNode(context: Context, n: NimNode, seed: NimNode): Result
 
-proc genCall(context: Context, n: NimNode, seed: NimNode): Result =
+proc genCall(context: Context, primal: NimNode, seed: NimNode): Result =
   
-  let tangentSym = n[0].getTangent()
+  let tangentSym = primal[0].getTangent()
   if tangentSym == nil:
-    error($n[0] & " is not differentiable.", n)
+    error($primal[0] & " is not differentiable.", primal)
   
-  let resultSym = genSym(nskLet)
+  let
+    primalResultType = primal.getType()
+    stack = context.stack
 
-  let tangentCall = newCall(tangentSym)
-  for i in 1 ..< n.len:
-    tangentCall.add(n[i])
-  tangentCall.add(seed)
-  tangentCall.add(resultSym)
+  let adjointCall = newCall(tangentSym)
+  result.adjoint = newStmtList(adjointCall)
+  for i in 1 ..< primal.len:
+    let
+      (primalChild, adjointChild) = context.genNode(primal[i], seed)
+      paramSym = genSym(nskLet)
+      adjointParam = quote do:
+        let `paramSym` = `adjointChild`
+    primal[i] = primalChild
+
+    # Execute the adjoint param expressions in reverse
+    result.adjoint.insert(0, adjointParam)
+
+    # Then add them to the adjoint call in normal order
+    adjointCall.add(paramSym)
+
+  adjointCall.add(seed)
+  adjointCall.add quote do:
+    `stack`.pop(type(`primalResultType`))
 
   result.primal = quote do:
-    let `resultSym` = `n`
-    `resultSym`  
-
-  result.adjoint = tangentCall
+    let primalResult = `primal`
+    `stack`.push(primalResult)
+    primalResult
 
 proc genIf(context: Context, primal: NimNode, seed: NimNode): Result =
   
@@ -205,16 +223,20 @@ proc genNode(context: Context, n: NimNode, seed: NimNode): Result =
         result.primal.add(x.primal)
         result.adjoint.insert(0, x.adjoint)
 
+    of nnkLiterals: return (n, n)
+
     of nnkCallKinds: return context.genCall(n, seed)
 
-    of nnkAsgn, nnkFastAsgn:
-      discard
+    of nnkAsgn, nnkFastAsgn: discard
 
     of nnkIfStmt, nnkIfExpr: return context.genIf(n, seed)
     #of nnkReturnStmt: return context.returnSym
-    # of nnkSym:
-    #   if n.symKind == nskResult: return (context.resultSym, newEmptyNode())
-    #   else: {.error: "Not implemented".}
+
+    of nnkSym:
+      if n == context.independent: return (n, newLit(1.0))
+      # # if n.symKind == nskResult: return (context.resultSym, newEmptyNode())
+      # else: {.error: "Not implemented".}
+      return (n, n)
 
     else: error("Unhandled node kind: " & $n.kind, n)
 
@@ -231,41 +253,45 @@ func bar*(x: SomeFloat): SomeFloat = foo(x)
 
 #let grad = gradient(bar)
 
-macro gradient*(body: typed): untyped =
+macro gradient*(independent: typed; body: typed): untyped =
   #echo astGenRepr body
   #echo body.getType()
   
   let
-    context = new Context
     stack = genSym(nskVar)
     returnSym = genSym(nskLabel)
     primalResultSym = genSym(nskVar)
     primalResultType = body.getType()
 
-  context.returnSym = returnSym
-  context.resultSym = primalResultSym
-  context.stack = stack
+  let context = Context(
+    returnSym: returnSym,
+    resultSym: primalResultSym,
+    stack: stack,
+    independent: independent)
 
   let
     seed = newLit(1.0)
     (primal, adjoint) = context.genNode(body, seed)
 
-  echo astGenRepr primal
-  echo astGenRepr adjoint
+  # echo astGenRepr primal
+  # echo astGenRepr adjoint
 
-  return quote do:
+  result = quote do:
     var
       `primalResultSym`: `primalResultType`
       `stack`: Stack
     block `returnSym`:
       discard `primal`
       `adjoint`
+  echo repr result
 
-let a = gradient:
-  if true:
-    foo(1.0)
-  else:
-    foo(2.0)
+var x: float
+let a = gradient x:
+  foo(sin(x))
+  # if true:
+  #   foo(1.0)
+  # else:
+  #   foo(2.0)
 
 echo a
 
