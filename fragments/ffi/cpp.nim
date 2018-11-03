@@ -589,10 +589,12 @@ when isMainModule:
         uniqueInt = makeUnique[int]()
         uniqueIntPtr = uniqueInt.getPtr()
       uniqueIntPtr[] = 10
+      assert uniqueIntPtr[] == 10
 
       var
         sharedInt = makeShared[int]()
         sharedIntPtr = sharedInt.getPtr()
-      sharedIntPtr[] = 10
+      sharedIntPtr[] = 11
+      assert sharedIntPtr[] == 11
     
     run()
