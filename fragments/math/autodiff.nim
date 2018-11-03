@@ -118,7 +118,7 @@ type
     stack: NimNode
     returnSym: NimNode
     resultSym: NimNode
-    independent: NimNode
+    adjointSymbols: seq[(NimNode, NimNode)]
 
 proc getTangent(sym: NimNode): NimNode =
   if $sym == "foo":
@@ -146,44 +146,69 @@ proc getTangent(sym: NimNode): NimNode =
 type
   Result = tuple[primal, adjoint: NimNode]
 
-proc genNode(context: Context, n: NimNode, seed: NimNode): Result
+proc genNode(context: Context, primal: NimNode; seed: NimNode): Result
 
-proc genCall(context: Context, primal: NimNode, seed: NimNode): Result =
+proc genCall(context: Context, primal: NimNode; seed: NimNode): Result =
   
   let tangentSym = primal[0].getTangent()
   if tangentSym == nil:
     error($primal[0] & " is not differentiable.", primal)
   
   let
-    primalResultType = primal.getType()
     stack = context.stack
+    adjointCall = newCall(tangentSym)
+    adjointResultSym = genSym(nskLet)
+    adjointParams = newStmtList()
+    primalResultSym = genSym(nskLet)
+    primalResultType = primal.getType()
 
-  let adjointCall = newCall(tangentSym)
-  result.adjoint = newStmtList(adjointCall)
+  var primalParams: seq[NimNode]
+
+  result.adjoint = newStmtList()
   for i in 1 ..< primal.len:
+
+    let paramSeed = if primal.len == 2:
+        adjointResultSym
+      else:
+        let index = i - 1
+        quote do: `adjointResultSym`[`index`]
+
     let
-      (primalChild, adjointChild) = context.genNode(primal[i], seed)
-      paramSym = genSym(nskLet)
-      adjointParam = quote do:
-        let `paramSym` = `adjointChild`
-    primal[i] = primalChild
+      (primalChild, adjointChild) = context.genNode(primal[i], `paramSeed`)
+      primalParam = genSym(nskLet)
+      primalParamType = primal[i].getType()
 
-    # Execute the adjoint param expressions in reverse
-    result.adjoint.insert(0, adjointParam)
+    primal[i] = quote do:
+      let temp = `primalChild`
+      `stack`.push(temp)
+      temp
 
-    # Then add them to the adjoint call in normal order
-    adjointCall.add(paramSym)
+    primalParams.add(primalParam)
+    result.adjoint.insert(0, quote do:
+      let`primalParam` = `stack`.pop(type(`primalParamType`)))
 
+    adjointParams.add(adjointChild)
+    
+  # Fetch the primal result first
+  result.adjoint.insert(0, quote do:
+    let `primalResultSym` = `stack`.pop(type(`primalResultType`)))
+
+  adjointCall.add(primalParams)
   adjointCall.add(seed)
-  adjointCall.add quote do:
-    `stack`.pop(type(`primalResultType`))
+  adjointCall.add(primalResultSym)
+
+  result.adjoint.add quote do:
+    let `adjointResultSym` = `adjointCall`
+    echo `adjointResultSym`
+    `adjointParams`
 
   result.primal = quote do:
     let primalResult = `primal`
     `stack`.push(primalResult)
+    echo primalResult
     primalResult
 
-proc genIf(context: Context, primal: NimNode, seed: NimNode): Result =
+proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
   
   let
     adjoint = primal.copyNimNode()
@@ -212,33 +237,39 @@ proc genIf(context: Context, primal: NimNode, seed: NimNode): Result =
 
   return (primal, adjoint)
 
-proc genNode(context: Context, n: NimNode, seed: NimNode): Result =
+import sequtils
 
-  case n.kind:
+proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
+
+  case primal.kind:
     of nnkStmtList, nnkStmtListExpr:
       result.primal = newStmtList()
       result.adjoint = newStmtList()
-      for child in n:
+      for child in primal:
         let x = context.genNode(child, seed)
         result.primal.add(x.primal)
         result.adjoint.insert(0, x.adjoint)
 
-    of nnkLiterals: return (n, n)
+    of nnkLiterals: return (primal, newEmptyNode())
 
-    of nnkCallKinds: return context.genCall(n, seed)
+    of nnkCallKinds: return context.genCall(primal, seed)
 
     of nnkAsgn, nnkFastAsgn: discard
 
-    of nnkIfStmt, nnkIfExpr: return context.genIf(n, seed)
+    of nnkIfStmt, nnkIfExpr: return context.genIf(primal, seed)
+    
     #of nnkReturnStmt: return context.returnSym
 
     of nnkSym:
-      if n == context.independent: return (n, newLit(1.0))
-      # # if n.symKind == nskResult: return (context.resultSym, newEmptyNode())
-      # else: {.error: "Not implemented".}
-      return (n, n)
+      echo primal.repr
+      for item in context.adjointSymbols:
+        if item[0] == primal:
+          let adjointSym = item[1]
+          result.primal = primal
+          result.adjoint = quote do: `adjointSym` += `seed`
+          break
 
-    else: error("Unhandled node kind: " & $n.kind, n)
+    else: error("Unhandled node kind: " & $primal.kind, primal)
 
 #macro gradient*(body: typed): untyped =
   # let def = body.getImpl()
@@ -262,16 +293,18 @@ macro gradient*(independent: typed; body: typed): untyped =
     returnSym = genSym(nskLabel)
     primalResultSym = genSym(nskVar)
     primalResultType = body.getType()
+    adjointResultSym = genSym(nskVar)
+    adjointResultType = independent.getType()
 
   let context = Context(
     returnSym: returnSym,
     resultSym: primalResultSym,
-    stack: stack,
-    independent: independent)
+    stack: stack)
+
+  context.adjointSymbols.add((independent, adjointResultSym))
 
   let
-    seed = newLit(1.0)
-    (primal, adjoint) = context.genNode(body, seed)
+    (primal, adjoint) = context.genNode(body, newLit(1.0))
 
   # echo astGenRepr primal
   # echo astGenRepr adjoint
@@ -279,23 +312,32 @@ macro gradient*(independent: typed; body: typed): untyped =
   result = quote do:
     var
       `primalResultSym`: `primalResultType`
+      `adjointResultSym`: `adjointResultType`
       `stack`: Stack
     block `returnSym`:
       discard `primal`
       `adjoint`
+      `adjointResultSym`
+
   echo repr result
 
-var x: float
-let a = gradient x:
+var x: float = 1.0
+let d = gradient x:
   foo(sin(x))
   # if true:
   #   foo(1.0)
   # else:
   #   foo(2.0)
 
-echo a
+echo d
 
 when isMainModule:
   var stack: Stack
   stack.push(1.int)
   echo stack.pop(int)
+
+  # let y = sin(x)
+  # tan(y)
+
+  # let dx = dtan(y, 1.0, result)
+  # dsin(x, dx, y)
