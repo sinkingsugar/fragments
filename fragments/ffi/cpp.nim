@@ -481,7 +481,7 @@ type
 proc internalMakeUnique[T](): UniquePointer[T] =
   var p = cast[ptr T](alloc0(sizeof(T)))
   proc stdmakeptr[T](vp: ptr T): UniquePointer[T] {.importcpp:"std::unique_ptr<'*0, std::function<void('*0*)>>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
-  return stdmakeptr[T](p).cppmove
+  return stdmakeptr[T](p)
 
 proc makeUnique*[T](): UniquePointer[T] {.inline.} =  internalMakeUnique[T]()
 
@@ -493,7 +493,7 @@ type
 proc internalMakeShared[T](): SharedPointer[T] =
   var p = cast[ptr T](alloc0(sizeof(T)))
   proc stdmakeptr[T](vp: ptr T): SharedPointer[T] {.importcpp:"std::shared_ptr<'*0>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
-  return stdmakeptr[T](p).cppmove
+  return stdmakeptr[T](p)
 
 proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
 
