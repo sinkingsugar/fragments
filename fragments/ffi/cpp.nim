@@ -469,6 +469,36 @@ type
 
 proc what*(s: StdException): cstring {.importcpp: "((char *)#.what())".}
 
+proc nimPointerDeleter(p: pointer) {.exportc.} = dealloc(p)
+
+{.emit: """/*TYPESECTION*/
+#include <functional>
+""".}
+
+type
+  UniquePointer* {.importcpp: "std::unique_ptr<'*0, std::function<void('*0*)>>", header: "<memory>".} [T] = object
+
+proc internalMakeUnique[T](): UniquePointer[T] =
+  var p = cast[ptr T](alloc0(sizeof(T)))
+  proc stdmakeptr[T](vp: ptr T): UniquePointer[T] {.importcpp:"std::unique_ptr<'*0, std::function<void('*0*)>>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
+  return stdmakeptr[T](p).cppmove
+
+proc makeUnique*[T](): UniquePointer[T] {.inline.} =  internalMakeUnique[T]()
+
+proc getPtr*[T](up: var UniquePointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
+
+type
+  SharedPointer* {.importcpp: "std::shared_ptr<'*0>", header: "<memory>".} [T] = object
+
+proc internalMakeShared[T](): SharedPointer[T] =
+  var p = cast[ptr T](alloc0(sizeof(T)))
+  proc stdmakeptr[T](vp: ptr T): SharedPointer[T] {.importcpp:"std::shared_ptr<'*0>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
+  return stdmakeptr[T](p).cppmove
+
+proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
+
+proc getPtr*[T](up: var SharedPointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
+
 when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
@@ -555,4 +585,14 @@ when isMainModule:
       echo x.test(1).to(cdouble)
       var nimTuple = cppTuple.toNimTuple()
 
+      var
+        uniqueInt = makeUnique[int]()
+        uniqueIntPtr = uniqueInt.getPtr()
+      uniqueIntPtr[] = 10
+
+      var
+        sharedInt = makeShared[int]()
+        sharedIntPtr = sharedInt.getPtr()
+      sharedIntPtr[] = 10
+    
     run()
