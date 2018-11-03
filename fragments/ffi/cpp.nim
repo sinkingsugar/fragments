@@ -479,8 +479,9 @@ type
   UniquePointer* {.importcpp: "std::unique_ptr<'*0, std::function<void('*0*)>>", header: "<memory>".} [T] = object
 
 proc internalMakeUnique[T](): UniquePointer[T] =
-  var p = cast[ptr T](alloc0(sizeof(T)))
-  proc stdmakeptr[T](vp: ptr T): UniquePointer[T] {.importcpp:"std::unique_ptr<'*0, std::function<void('*0*)>>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
+  var p: ptr T
+  cppnewptr(p)
+  proc stdmakeptr[T](vp: ptr T): UniquePointer[T] {.importcpp:"std::unique_ptr<'*0, std::function<void('*0*)>>(@, []('*0* ptr) { callCppPtrDestructor(ptr); nimPointerDeleter(ptr); })", varargs, constructor.}
   return stdmakeptr[T](p)
 
 proc makeUnique*[T](): UniquePointer[T] {.inline.} =  internalMakeUnique[T]()
@@ -491,8 +492,9 @@ type
   SharedPointer* {.importcpp: "std::shared_ptr<'*0>", header: "<memory>".} [T] = object
 
 proc internalMakeShared[T](): SharedPointer[T] =
-  var p = cast[ptr T](alloc0(sizeof(T)))
-  proc stdmakeptr[T](vp: ptr T): SharedPointer[T] {.importcpp:"std::shared_ptr<'*0>(@, []('*0* ptr) { nimPointerDeleter(ptr); })", varargs, constructor.}
+  var p: ptr T
+  cppnewptr(p)
+  proc stdmakeptr[T](vp: ptr T): SharedPointer[T] {.importcpp:"std::shared_ptr<'*0>(@, []('*0* ptr) { callCppPtrDestructor(ptr); nimPointerDeleter(ptr); })", varargs, constructor.}
   return stdmakeptr[T](p)
 
 proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
@@ -596,5 +598,11 @@ when isMainModule:
         sharedIntPtr = sharedInt.getPtr()
       sharedIntPtr[] = 11
       assert sharedIntPtr[] == 11
+
+      block:
+        echo "Expect dtor"
+        var sharedInt = makeShared[MyClass]()
+
+      echo "Expect more dtors..."
     
     run()

@@ -17,6 +17,11 @@ public:
     numbers[1] = 5;
   }
 
+  ~MyClass()
+  {
+    printf("~MyClass\n");
+  }
+
   double test(int x) 
   { 
     return (double)x; 
