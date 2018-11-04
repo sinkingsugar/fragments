@@ -469,7 +469,8 @@ type
 
 proc what*(s: StdException): cstring {.importcpp: "((char *)#.what())".}
 
-proc nimPointerDeleter(p: pointer) {.exportc.} = dealloc(p)
+proc nimPointerDeleter(p: pointer) {.exportc.} = 
+  dealloc(p)
 
 {.emit: """/*TYPESECTION*/
 #include <functional>
@@ -484,9 +485,15 @@ proc internalMakeUnique[T](): UniquePointer[T] =
   proc stdmakeptr[T](vp: ptr T): UniquePointer[T] {.importcpp:"std::unique_ptr<'*0, std::function<void('*0*)>>(@, []('*0* ptr) { callCppPtrDestructor(ptr); nimPointerDeleter(ptr); })", varargs, constructor.}
   return stdmakeptr[T](p)
 
-proc makeUnique*[T](): UniquePointer[T] {.inline.} =  internalMakeUnique[T]()
+proc makeUnique*[T](): UniquePointer[T] {.inline.} = internalMakeUnique[T]()
 
 proc getPtr*[T](up: var UniquePointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
+
+proc hasPtr*[T](up: var UniquePointer[T]): bool {.inline.} = up.toCpp.to(bool)
+
+proc makeUnique*[T](value: T): UniquePointer[T] {.inline.} = 
+  result = internalMakeUnique[T]()
+  result.getPtr()[] = value
 
 type
   SharedPointer* {.importcpp: "std::shared_ptr<'*0>", header: "<memory>".} [T] = object
@@ -497,9 +504,47 @@ proc internalMakeShared[T](): SharedPointer[T] =
   proc stdmakeptr[T](vp: ptr T): SharedPointer[T] {.importcpp:"std::shared_ptr<'*0>(@, []('*0* ptr) { callCppPtrDestructor(ptr); nimPointerDeleter(ptr); })", varargs, constructor.}
   return stdmakeptr[T](p)
 
-proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
+proc makeShared*[T](): SharedPointer[T] {.inline.} = internalMakeShared[T]()
 
 proc getPtr*[T](up: SharedPointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
+
+proc hasPtr*[T](up: SharedPointer[T]): bool {.inline.} = up.toCpp.to(bool)
+
+proc makeShared*[T](value: T): SharedPointer[T] {.inline.} = 
+  result = internalMakeShared[T]()
+  result.getPtr()[] = value
+
+const currentSourceDir = currentSourcePath().splitFile.dir / ""
+{.passC: "-I" & currentSourceDir.}
+
+type
+  InternalFragPointer {.importcpp: "FragPointer<'0>", header: "FragPointer.h".} [T] = object
+  FragPointer*[T] = object {.byref.}
+    fp: InternalFragPointer[T]
+
+proc `=`*[T](a: var FragPointer[T]; b: FragPointer[T]) {.inline.} =
+  echo "FragPointerEq"
+  a.fp = b.fp
+  # a.fp = cppmove(b.fp) # hmm not really sure of this
+
+proc `=sink`*[T](a: var FragPointer[T]; b: FragPointer[T]) {.inline.} =
+  echo "FragPointerSink"
+  a.fp = cppmove(b.fp)
+
+proc `=destroy`*[T](a: var FragPointer[T]) {.inline.} =
+  cppdtor(addr(a.fp))
+
+proc makeFragPointer*[T](): FragPointer[T] {.inline, noinit.} =
+  var p: ptr T
+  cppnewptr(p)
+  proc makeptr[T](vp: ptr T): InternalFragPointer[T] {.importcpp:"FragPointer<'*0>(@)", varargs, constructor.}
+  result.fp = makeptr(p)
+
+converter fragToT*[T](a: FragPointer[T]): T {.inline.} = a.fp.toCpp.get().to(ptr T)[]
+
+converter getPtr*[T](a: FragPointer[T]): ptr T {.inline.} = a.fp.toCpp.get().to(ptr T)
+
+proc isNil*[T](a: FragPointer[T]): bool {.inline.} = a.fp.toCpp.get().to(ptr T) == nil
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
@@ -599,10 +644,37 @@ when isMainModule:
       sharedIntPtr[] = 11
       assert sharedIntPtr[] == 11
 
+      var sharedNothing: SharedPointer[int]
+      assert sharedNothing.hasPtr == false
+      
+      var shared20 = makeShared(20.int)
+      assert shared20.getPtr()[] == 20
+
       block:
         echo "Expect dtor"
         var sharedInt = makeShared[MyClass]()
 
       echo "Expect more dtors..."
-    
+
+      var nfptr: FragPointer[int]
+      assert nfptr.isNil
+
+      var fptr = makeFragPointer[int]()
+      assert fptr.isNil == false
+      var fx: int = 10
+      fx = fptr
+
+      var fptr2 = makeFragPointer[int]()
+      fptr2 = fptr
+
+      var fptr3 = fptr2
+
+      proc fptrProc(x: FragPointer[int]) = echo x.int
+      fptrProc(fptr3)
+
+      echo fx
+
+      var fptrSeq = newSeq[FragPointer[int]](10)
+
+
     run()

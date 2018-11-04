@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <memory>
 
 class MyClass 
 {
@@ -44,6 +45,8 @@ public:
   
   int number = 77;
   int numbers[2];
+
+  std::shared_ptr<MyClass> mc;
 };
 
 class MyClass2
