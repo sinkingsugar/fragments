@@ -499,7 +499,7 @@ proc internalMakeShared[T](): SharedPointer[T] =
 
 proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
 
-proc getPtr*[T](up: var SharedPointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
+proc getPtr*[T](up: SharedPointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
 
 when isMainModule:
   {.emit:"#include <stdio.h>".}
