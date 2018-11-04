@@ -119,6 +119,7 @@ type
     returnSym: NimNode
     resultSym: NimNode
     adjointSymbols: seq[(NimNode, NimNode)]
+    currentBlock: NimNode
 
 proc getTangent(sym: NimNode): NimNode =
   if $sym == "foo":
@@ -245,7 +246,7 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
     of nnkStmtList, nnkStmtListExpr:
       result.primal = newStmtList()
       result.adjoint = newStmtList()
-      for child in primal:
+      for child in primal: # TODO: reverse
         let x = context.genNode(child, seed)
         result.primal.add(x.primal)
         result.adjoint.insert(0, x.adjoint)
@@ -254,14 +255,43 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
 
     of nnkCallKinds: return context.genCall(primal, seed)
 
-    of nnkAsgn, nnkFastAsgn: discard
+    of nnkAsgn, nnkFastAsgn:
+      expectKind(primal[0], nnkSym)
+      for item in context.adjointSymbols:
+        if item[0] == primal:
+          let adjointSym = item[1]
+          (primal[1], result.adjoint) = context.genNode(primal[1], adjointSym)
+          break
 
     of nnkIfStmt, nnkIfExpr: return context.genIf(primal, seed)
     
+    of nnkVarSection, nnkLetSection:
+      let adjointVarSecion = nnkVarSection.newTree()
+      context.currentBlock.insert(0, adjointVarSecion)
+      result.adjoint = newStmtList()
+      for child in primal: # TODO: reverse
+        for i in countup(child.len - 3, 0):
+          let
+            sym = child[i]
+            adjointSym = genSym(nskVar)
+
+          # Create a variable declaration at the beginning of the
+          # current of the block and register the symbol.
+          context.adjointSymbols.add((sym, adjointSym))
+          adjointVarSecion.add(newIdentDefs(adjointSym, sym.getType(), newEmptyNode()))
+
+          # If there is an initializer, generate the adjoint.
+          # The seed is the adjoint symbol to the original variable.
+          if child[^1].kind != nnkEmpty:
+            let (newPrimal, adjoint) = context.genNode(child[^1], adjointSym)
+            child[^1] = newPrimal
+            result.adjoint.add(adjoint)        
+
+      result.primal = primal
+
     #of nnkReturnStmt: return context.returnSym
 
     of nnkSym:
-      echo primal.repr
       for item in context.adjointSymbols:
         if item[0] == primal:
           let adjointSym = item[1]
@@ -295,35 +325,38 @@ macro gradient*(independent: typed; body: typed): untyped =
     primalResultType = body.getType()
     adjointResultSym = genSym(nskVar)
     adjointResultType = independent.getType()
+    adjointBlock = newStmtList()
 
   let context = Context(
     returnSym: returnSym,
     resultSym: primalResultSym,
-    stack: stack)
+    stack: stack,
+    currentBlock: adjointBlock)
 
   context.adjointSymbols.add((independent, adjointResultSym))
 
-  let
-    (primal, adjoint) = context.genNode(body, newLit(1.0))
+  let (primal, adjoint) = context.genNode(body, newLit(1.0))
 
-  # echo astGenRepr primal
-  # echo astGenRepr adjoint
+  adjointBlock.add quote do:
+    block `returnSym`:
+      discard `primal`
+      `adjoint`
 
   result = quote do:
     var
       `primalResultSym`: `primalResultType`
       `adjointResultSym`: `adjointResultType`
       `stack`: Stack
-    block `returnSym`:
-      discard `primal`
-      `adjoint`
-      `adjointResultSym`
+    `adjointBlock`
+    `adjointResultSym`
 
   echo repr result
 
 var x: float = 1.0
 let d = gradient x:
-  foo(sin(x))
+  let y = foo(sin(x))
+  let z = sin(y)
+  sin(z)
   # if true:
   #   foo(1.0)
   # else:
