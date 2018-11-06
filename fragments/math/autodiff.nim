@@ -161,7 +161,15 @@ type
     returnSym: NimNode
     resultSym: NimNode
     adjointSymbols: seq[(NimNode, NimNode)]
-    currentBlock: NimNode
+    blocks: seq[Block]
+
+  Block = object
+    head: NimNode
+    primal: NimNode
+    adjoint: NimNode
+
+proc currentBlock(context: Context): Block =
+  context.blocks[^1]
 
 proc getTangent(sym: NimNode): NimNode =
   if $sym == "+": return bindSym"tangentAdd"
@@ -188,9 +196,9 @@ proc getTangent(sym: NimNode): NimNode =
 type
   Result = tuple[primal, adjoint: NimNode]
 
-proc genNode(context: Context, primal: NimNode; seed: NimNode): Result
+proc genNode(context: Context; primal: NimNode; seed: NimNode): Result
 
-proc genCall(context: Context, primal: NimNode; seed: NimNode): Result =
+proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
   
   let tangentSym = primal[0].getTangent()
   if tangentSym == nil:
@@ -251,7 +259,7 @@ proc genCall(context: Context, primal: NimNode; seed: NimNode): Result =
     #echo primalResult
     primalResult
 
-proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
+proc genIf(context: Context; primal: NimNode; seed: NimNode): Result =
   
   let
     adjoint = primal.copyNimNode()
@@ -280,12 +288,23 @@ proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
 
   return (primal, adjoint)
 
-proc genFor(context: Context, primal: NimNode; seed: NimNode): Result =
+proc genBlock(context: Context; primal, seed: NimNode; head: NimNode = nil): Result =
+  result = (newStmtList(), newStmtList())
+  context.blocks.add(Block(head: head, primal: result.primal, adjoint: result.adjoint))
+  try:
+    let (primal, adjoint) = context.genNode(primal, seed)
+    result.primal.add(primal)
+    result.adjoint.add(adjoint)
+    return result
+  finally:
+    discard context.blocks.pop()
+
+proc genFor(context: Context; primal: NimNode; seed: NimNode): Result =
 
   let
     stack = context.stack
     (it, itAdjoint) = context.genNode(primal[^2], nil)
-    (body, bodyAdjoint) = context.genNode(primal[^1], nil)
+    (body, bodyAdjoint) = context.genBlock(primal[^1], nil, primal)
 
   #primal[^2] = it
 
@@ -303,12 +322,12 @@ proc genFor(context: Context, primal: NimNode; seed: NimNode): Result =
       `itAdjoint`
     `itAdjoint`
 
-proc genWhile(context: Context, primal: NimNode; seed: NimNode): Result =
+proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
 
   let
     stack = context.stack
     (condition, conditionAdjoint) = context.genNode(primal[0], nil)
-    (body, bodyAdjoint) = context.genNode(primal[1], nil)
+    (body, bodyAdjoint) = context.genBlock(primal[1], nil, primal)
 
   primal[0] = quote do:
     let didEnter = `condition`
@@ -325,7 +344,7 @@ proc genWhile(context: Context, primal: NimNode; seed: NimNode): Result =
       `conditionAdjoint`
     `conditionAdjoint`
 
-proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
+proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
   case primal.kind:
     of nnkStmtList, nnkStmtListExpr:
@@ -357,7 +376,7 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
     
     of nnkVarSection, nnkLetSection:
       let adjointVarSecion = nnkVarSection.newTree()
-      context.currentBlock.insert(0, adjointVarSecion)
+      context.currentBlock.adjoint.insert(0, adjointVarSecion)
       result.adjoint = newStmtList()
       for child in primal: # TODO: reverse
         for i in countup(child.len - 3, 0):
@@ -420,44 +439,42 @@ macro gradient*(independent: typed; body: typed): untyped =
     primalResultType = body.getType()
     adjointResultSym = genSym(nskVar)
     adjointResultType = independent.getType()
-    adjointBlock = newStmtList()
 
   let context = Context(
     returnSym: returnSym,
     resultSym: primalResultSym,
-    stack: stack,
-    currentBlock: adjointBlock)
+    stack: stack)
 
   context.adjointSymbols.add((independent, adjointResultSym))
 
-  let (primal, adjoint) = context.genNode(body, newLit(1.0))
-
-  adjointBlock.add quote do:
-    block `returnSym`:
-      discard `primal`
-      `adjoint`
+  let (primal, adjoint) = context.genBlock(body, newLit(1.0))
 
   result = quote do:
     var
       `primalResultSym`: `primalResultType`
       `adjointResultSym`: `adjointResultType`
       `stack`: Stack
-    `adjointBlock`
+    block `returnSym`:
+      discard `primal`
+      `adjoint`
     `adjointResultSym`
 
   echo repr result
 
 var x: float = 1.0
 let d = gradient x:
-  var y = x
-  for i in 0 ..< 2:
-    y = y + x
-  y
-
   # var y = x
-  # while false:
+  # for i in 0 ..< 2:
   #   y = y + x
   # y
+
+  var y = x
+  while false:
+    y = y + x
+    # if true:
+    #   break
+    #y = y + x
+  y
 
   # let y = foo(sin(x))
   # let z = sin(y)
