@@ -194,7 +194,8 @@ proc genCall(context: Context, primal: NimNode; seed: NimNode): Result =
   
   let tangentSym = primal[0].getTangent()
   if tangentSym == nil:
-    error($primal[0] & " is not differentiable.", primal)
+    return (primal, newStmtList())
+    # error($primal[0] & " is not differentiable.", primal)
   
   let
     stack = context.stack
@@ -279,6 +280,29 @@ proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
 
   return (primal, adjoint)
 
+proc genFor(context: Context, primal: NimNode; seed: NimNode): Result =
+
+  let
+    stack = context.stack
+    (it, itAdjoint) = context.genNode(primal[^2], nil)
+    (body, bodyAdjoint) = context.genNode(primal[^1], nil)
+
+  #primal[^2] = it
+
+  primal[^1] = quote do:
+    `stack`.push(true)
+    `body`
+
+  result.primal = quote do:
+    `primal`
+    `stack`.push(false)
+
+  result.adjoint = quote do:
+    while `stack`.pop(bool):
+      `bodyAdjoint`
+      `itAdjoint`
+    `itAdjoint`
+
 proc genWhile(context: Context, primal: NimNode; seed: NimNode): Result =
 
   let
@@ -328,6 +352,8 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
     of nnkIfStmt, nnkIfExpr: return context.genIf(primal, seed)
 
     of nnkWhileStmt: return context.genWhile(primal, seed)
+
+    of nnkForStmt: return context.genFor(primal, seed)
     
     of nnkVarSection, nnkLetSection:
       let adjointVarSecion = nnkVarSection.newTree()
@@ -383,7 +409,7 @@ func bar*(x: SomeFloat): SomeFloat = foo(x)
 #let grad = gradient(bar)
 
 macro gradient*(independent: typed; body: typed): untyped =
-  #echo astGenRepr body
+  echo astGenRepr body
   if body.getType.typeKind == ntyVoid:
     error("Gradient expression must return a value", body)
 
@@ -424,9 +450,14 @@ macro gradient*(independent: typed; body: typed): untyped =
 var x: float = 1.0
 let d = gradient x:
   var y = x
-  while false:
+  for i in 0 ..< 2:
     y = y + x
   y
+
+  # var y = x
+  # while false:
+  #   y = y + x
+  # y
 
   # let y = foo(sin(x))
   # let z = sin(y)
