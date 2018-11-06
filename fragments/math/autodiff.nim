@@ -85,6 +85,51 @@ var
 # t.data[0] = 1.0
 # echo t.data[0]
 
+func tangentNeg*(self, grad, originalResult: SomeFloat): SomeFloat =
+  -grad
+
+func tangentAdd*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
+  (grad, grad)
+
+func tangentSub*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
+  (grad, -grad)
+
+func tangentMul*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
+  (grad * right, grad * left)
+
+func tangentDiv*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
+  (grad / right, -grad * left / (right * right))
+
+func tangentSqrt*(x, dx, originalResult: SomeFloat): SomeFloat =
+  dx / (2 * originalResult)
+
+func tangentExp*(x, dx, originalResult: SomeFloat): SomeFloat =
+  dx * originalResult
+
+func tangentSin*(x, dx, originalResult: SomeFloat): SomeFloat =
+  cos(x) * dx
+
+func tangentCos*(x, dx, originalResult: SomeFloat): SomeFloat =
+  -sin(x) * dx
+
+func tangentTan*(x, dx, originalResult: SomeFloat): SomeFloat =
+  dx * (1 + originalResult * originalResult)
+
+# func tangentAsin*(x, dx, originalResult: SomeFloat): SomeFloat =
+#   dx * (-x * dx + 1).rsqrt()
+
+# func tangentAcos*(x, dx, originalResult: SomeFloat): SomeFloat =
+#   dx * -(-x * dx + 1).rsqrt()
+
+func tangentAtan*(x, dx, originalResult: SomeFloat): SomeFloat =
+  dx / (x * x + 1)
+
+func tangentSinh*(x, dx, originalResult: SomeFloat): SomeFloat =
+  cosh(x) * dx
+
+func tangentCosh*(x, dx, originalResult: SomeFloat): SomeFloat =
+  -sinh(x) * dx
+
 func foo*(x: SomeFloat): SomeFloat =
   sin(x)
 
@@ -93,9 +138,6 @@ func tangentFoo*(x, dx, originalResult: SomeFloat): SomeFloat =
 
 func adjointFoo*(x, dx, adjoint: SomeFloat): SomeFloat =
   cos(x) * adjoint
-
-func tangentSin*(x, dx, originalResult: SomeFloat): SomeFloat =
-  cos(x) * dx
 
 #pullback(foo)
 
@@ -122,10 +164,9 @@ type
     currentBlock: NimNode
 
 proc getTangent(sym: NimNode): NimNode =
-  if $sym == "foo":
-    return bindSym"tangentFoo"
-  elif $sym == "sin":
-    return bindSym"tangentSin"
+  if $sym == "+": return bindSym"tangentAdd"
+  elif $sym == "*": return bindSym"tangentMul"
+  elif $sym == "sin": return bindSym"tangentSin"
 
   # let
   #   procDef = sym.getImpl()
@@ -200,13 +241,13 @@ proc genCall(context: Context, primal: NimNode; seed: NimNode): Result =
 
   result.adjoint.add quote do:
     let `adjointResultSym` = `adjointCall`
-    echo `adjointResultSym`
+    #echo `adjointResultSym`
     `adjointParams`
 
   result.primal = quote do:
     let primalResult = `primal`
     `stack`.push(primalResult)
-    echo primalResult
+    #echo primalResult
     primalResult
 
 proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
@@ -238,7 +279,27 @@ proc genIf(context: Context, primal: NimNode; seed: NimNode): Result =
 
   return (primal, adjoint)
 
-import sequtils
+proc genWhile(context: Context, primal: NimNode; seed: NimNode): Result =
+
+  let
+    stack = context.stack
+    (condition, conditionAdjoint) = context.genNode(primal[0], nil)
+    (body, bodyAdjoint) = context.genNode(primal[1], nil)
+
+  primal[0] = quote do:
+    let didEnter = `condition`
+    `stack`.push(didEnter)
+    didEnter
+
+  primal[1] = body
+
+  result.primal = primal
+
+  result.adjoint = quote do:
+    while `stack`.pop(bool):
+      `bodyAdjoint`
+      `conditionAdjoint`
+    `conditionAdjoint`
 
 proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
 
@@ -251,19 +312,22 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
         result.primal.add(x.primal)
         result.adjoint.insert(0, x.adjoint)
 
-    of nnkLiterals: return (primal, newEmptyNode())
+    of nnkLiterals: return (primal, newStmtList())
 
     of nnkCallKinds: return context.genCall(primal, seed)
 
     of nnkAsgn, nnkFastAsgn:
       expectKind(primal[0], nnkSym)
       for item in context.adjointSymbols:
-        if item[0] == primal:
+        if item[0] == primal[0]:
           let adjointSym = item[1]
           (primal[1], result.adjoint) = context.genNode(primal[1], adjointSym)
+          result.primal = primal
           break
 
     of nnkIfStmt, nnkIfExpr: return context.genIf(primal, seed)
+
+    of nnkWhileStmt: return context.genWhile(primal, seed)
     
     of nnkVarSection, nnkLetSection:
       let adjointVarSecion = nnkVarSection.newTree()
@@ -282,6 +346,7 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
 
           # If there is an initializer, generate the adjoint.
           # The seed is the adjoint symbol to the original variable.
+          # TODO: Share code with nnkAsgn
           if child[^1].kind != nnkEmpty:
             let (newPrimal, adjoint) = context.genNode(child[^1], adjointSym)
             child[^1] = newPrimal
@@ -292,6 +357,9 @@ proc genNode(context: Context, primal: NimNode; seed: NimNode): Result =
     #of nnkReturnStmt: return context.returnSym
 
     of nnkSym:
+      if primal == bindSym"true" or  primal == bindSym"false":
+        return (primal, newStmtList())
+
       for item in context.adjointSymbols:
         if item[0] == primal:
           let adjointSym = item[1]
@@ -316,8 +384,9 @@ func bar*(x: SomeFloat): SomeFloat = foo(x)
 
 macro gradient*(independent: typed; body: typed): untyped =
   #echo astGenRepr body
-  #echo body.getType()
-  
+  if body.getType.typeKind == ntyVoid:
+    error("Gradient expression must return a value", body)
+
   let
     stack = genSym(nskVar)
     returnSym = genSym(nskLabel)
@@ -354,9 +423,16 @@ macro gradient*(independent: typed; body: typed): untyped =
 
 var x: float = 1.0
 let d = gradient x:
-  let y = foo(sin(x))
-  let z = sin(y)
-  sin(z)
+  var y = x
+  while false:
+    y = y + x
+  y
+
+  # let y = foo(sin(x))
+  # let z = sin(y)
+  # sin(z)
+
+
   # if true:
   #   foo(1.0)
   # else:
