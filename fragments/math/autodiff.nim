@@ -366,7 +366,13 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
       for item in context.adjointSymbols:
         if item[0] == primal[0]:
           let adjointSym = item[1]
-          (primal[1], result.adjoint) = context.genNode(primal[1], adjointSym)
+
+          let seed = quote do:
+            let seed = `adjointSym`
+            `adjointSym`.reset()
+            seed
+
+          (primal[1], result.adjoint) = context.genNode(primal[1], seed)
           result.primal = primal
           break
 
@@ -404,7 +410,7 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
     #of nnkReturnStmt: return context.returnSym
 
     of nnkSym:
-      if primal == bindSym"true" or  primal == bindSym"false":
+      if primal.getType().typeKind == ntyBool:
         return (primal, newStmtList())
 
       for item in context.adjointSymbols:
