@@ -203,11 +203,11 @@ type
 
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result
 
-proc genPushPop(context: Context; primal: NimNode): Result =
+proc genPushPop(context: Context; primal: NimNode; typ: NimNode = nil): Result =
   if context.isInLoop():
     let
       stack = context.stack
-      primalType = primal.getType()
+      primalType = if typ != nil: typ else: primal.getType()
 
     result.primal = quote do:
       let temp = `primal`
@@ -321,7 +321,7 @@ proc genFor(context: Context; primal: NimNode; seed: NimNode): Result =
   let
     stack = context.stack
     counter = genSym(nskVar)
-    (pushCounter, popCounter) = context.genPushPop(counter)
+    (pushCounter, popCounter) = context.genPushPop(counter, bindSym"int")
     (it, itAdjoint) = context.genNode(primal[^2], nil)
     (body, bodyAdjoint) = context.genBlock(primal[^1], nil, primal)
 
@@ -349,7 +349,7 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
   let
     stack = context.stack
     counter = genSym(nskVar)
-    (pushCounter, popCounter) = context.genPushPop(counter)
+    (pushCounter, popCounter) = context.genPushPop(counter, bindSym"int")
     (condition, conditionAdjoint) = context.genNode(primal[0], nil)
     (body, bodyAdjoint) = context.genBlock(primal[1], nil, primal)
 
@@ -373,7 +373,19 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
     `conditionAdjoint`
 
 proc genBreak(context: Context; primal: NimNode; targetBlockIndex: int): Result =
-  return (primal, newStmtList())
+  let
+    condition = genSym(nskLet)
+    (pushCondition, popCondition) = context.genPushPop(condition, bindSym"bool")
+
+  result.primal = quote do:
+    let `condition` = false
+    discard `pushCondition`
+    `primal`  
+
+  result.adjoint = newStmtList()
+
+  # for i in countdown(context.blocks.high, targetBlockIndex):
+  #   context.blocks[i].conditions.add(condition)
 
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
