@@ -346,6 +346,9 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
       `conditionAdjoint`
     `conditionAdjoint`
 
+proc genBreak(context: Context; primal: NimNode; targetBlockIndex: int): Result =
+  return (primal, newStmtList())
+
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
   case primal.kind:
@@ -382,6 +385,25 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
     of nnkForStmt: return context.genFor(primal, seed)
     
+    of nnkBlockStmt: return context.genBlock(primal[1], seed, primal)
+
+    of nnkBreakStmt:
+      if primal[0].kind != nnkSym:
+        return context.genBreak(primal, context.blocks.high)
+      else:
+        for i in 0 .. context.blocks.high:
+          let head = context.blocks[i].head
+          if head.kind == nnkBlockStmt and head[0] == primal[0]:
+            return context.genBreak(primal, i)
+
+    of nnkContinueStmt:        
+      for i in countdown(context.blocks.high, 0):
+        if context.blocks[i].head.kind in { nnkForStmt, nnkWhileStmt }:
+          return context.genBreak(primal, i)
+
+    of nnkReturnStmt:
+      return context.genBreak(primal, 0)
+
     of nnkVarSection, nnkLetSection:
       let adjointVarSecion = nnkVarSection.newTree()
       context.currentBlock.adjoint.insert(0, adjointVarSecion)
@@ -406,8 +428,6 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
             result.adjoint.add(adjoint)        
 
       result.primal = primal
-
-    #of nnkReturnStmt: return context.returnSym
 
     of nnkSym:
       if primal.getType().typeKind == ntyBool:
