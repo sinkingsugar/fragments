@@ -320,6 +320,8 @@ proc genFor(context: Context; primal: NimNode; seed: NimNode): Result =
 
   let
     stack = context.stack
+    counter = genSym(nskVar)
+    (pushCounter, popCounter) = context.genPushPop(counter)
     (it, itAdjoint) = context.genNode(primal[^2], nil)
     (body, bodyAdjoint) = context.genBlock(primal[^1], nil, primal)
 
@@ -327,14 +329,17 @@ proc genFor(context: Context; primal: NimNode; seed: NimNode): Result =
 
   primal[^1] = quote do:
     `body`
-    `stack`.push(true)
+    inc `counter`
 
   result.primal = quote do:
-    `stack`.push(false)
+    var `counter`: int
     `primal`
+    discard `pushCounter`
 
   result.adjoint = quote do:
-    while `stack`.pop(bool):
+    var count = `popCounter`
+    while count > 0:
+      dec count
       `bodyAdjoint`
       `itAdjoint`
     `itAdjoint`
@@ -343,6 +348,8 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
 
   let
     stack = context.stack
+    counter = genSym(nskVar)
+    (pushCounter, popCounter) = context.genPushPop(counter)
     (condition, conditionAdjoint) = context.genNode(primal[0], nil)
     (body, bodyAdjoint) = context.genBlock(primal[1], nil, primal)
 
@@ -350,14 +357,17 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
 
   primal[1] = quote do:
     `body`
-    `stack`.push(true)
+    inc `counter`
 
   result.primal = quote do:
-    `stack`.push(false)
+    var `counter`: int
     `primal`
+    discard `pushCounter`
 
   result.adjoint = quote do:
-    while `stack`.pop(bool):
+    var count = `popCounter`
+    while count > 0:
+      dec count
       `bodyAdjoint`
       `conditionAdjoint`
     `conditionAdjoint`
