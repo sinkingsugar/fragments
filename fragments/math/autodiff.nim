@@ -171,6 +171,11 @@ type
 proc currentBlock(context: Context): Block =
   context.blocks[^1]
 
+proc isInLoop(context: Context): bool =
+  for b in context.blocks:
+    if b.head.kind in { nnkForStmt, nnkWhileStmt }:
+      return true
+
 proc getTangent(sym: NimNode): NimNode =
   if $sym == "+": return bindSym"tangentAdd"
   elif $sym == "*": return bindSym"tangentMul"
@@ -198,6 +203,26 @@ type
 
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result
 
+proc genPushPop(context: Context; primal: NimNode): Result =
+  if context.isInLoop():
+    let
+      stack = context.stack
+      primalType = primal.getType()
+
+    result.primal = quote do:
+      let temp = `primal`
+      `stack`.push(temp)
+      temp
+    result.adjoint = quote do:
+      `stack`.pop(type(`primalType`))
+
+  else:
+    let tempSym = genSym(nskLet)
+    result.primal = quote do:
+      let `tempSym` = `primal`
+      `tempSym`
+    result.adjoint = tempSym
+
 proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
   
   let tangentSym = primal[0].getTangent()
@@ -211,7 +236,6 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
     adjointResultSym = genSym(nskLet)
     adjointParams = newStmtList()
     primalResultSym = genSym(nskLet)
-    primalResultType = primal.getType()
 
   var primalParams: seq[NimNode]
 
@@ -226,23 +250,22 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
 
     let
       (primalChild, adjointChild) = context.genNode(primal[i], `paramSeed`)
+      (pushParam, popParam) = context.genPushPop(primalChild)
       primalParam = genSym(nskLet)
-      primalParamType = primal[i].getType()
-
-    primal[i] = quote do:
-      let temp = `primalChild`
-      `stack`.push(temp)
-      temp
+    
+    primal[i] = pushParam
 
     primalParams.add(primalParam)
     result.adjoint.insert(0, quote do:
-      let`primalParam` = `stack`.pop(type(`primalParamType`)))
+      let`primalParam` = `popParam`)
 
     adjointParams.add(adjointChild)
     
+  let (pushResult, popResult) = context.genPushPop(primal)
+
   # Fetch the primal result first
   result.adjoint.insert(0, quote do:
-    let `primalResultSym` = `stack`.pop(type(`primalResultType`)))
+    let `primalResultSym` = `popResult`)
 
   adjointCall.add(primalParams)
   adjointCall.add(seed)
@@ -253,11 +276,7 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
     #echo `adjointResultSym`
     `adjointParams`
 
-  result.primal = quote do:
-    let primalResult = `primal`
-    `stack`.push(primalResult)
-    #echo primalResult
-    primalResult
+  result.primal = pushResult
 
 proc genIf(context: Context; primal: NimNode; seed: NimNode): Result =
   
@@ -270,17 +289,15 @@ proc genIf(context: Context; primal: NimNode; seed: NimNode): Result =
     adjoint.add(adjointChild)
 
     if primalChild.kind != nnkElse:
-      let condition = primalChild[0]
+      let
+        # TODO: Transform condition too
+        (pushCondition, popCondition) = context.genPushPop(primalChild[0])
 
       # Evaluate the branch condition and save the result
-      primalChild[0] = quote do:
-        let didEnter = `condition`
-        `stack`.push(didEnter)
-        didEnter
+      primalChild[0] = pushCondition
 
       # Load the result and take the same path
-      adjointChild.add quote do:
-        `stack`.pop(bool)
+      adjointChild.add(popCondition)
 
     let r = context.genNode(primalChild[^1], seed)
     primalChild[^1] = r.primal
@@ -328,7 +345,6 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
     stack = context.stack
     (condition, conditionAdjoint) = context.genNode(primal[0], nil)
     (body, bodyAdjoint) = context.genBlock(primal[1], nil, primal)
-    didEnterSym = genSym(nskLet)
 
   primal[0] = condition
 
@@ -456,7 +472,7 @@ func bar*(x: SomeFloat): SomeFloat = foo(x)
 #let grad = gradient(bar)
 
 macro gradient*(independent: typed; body: typed): untyped =
-  echo astGenRepr body
+  #echo astGenRepr body
   if body.getType.typeKind == ntyVoid:
     error("Gradient expression must return a value", body)
 
@@ -497,11 +513,13 @@ let d = gradient x:
   # y
 
   var y = x
-  while false:
+  var i = 0
+  while i < 2:
     y = y + x
     # if true:
     #   break
     #y = y + x
+    inc i
   y
 
   # let y = foo(sin(x))
