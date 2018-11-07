@@ -306,15 +306,15 @@ proc genFor(context: Context; primal: NimNode; seed: NimNode): Result =
     (it, itAdjoint) = context.genNode(primal[^2], nil)
     (body, bodyAdjoint) = context.genBlock(primal[^1], nil, primal)
 
-  #primal[^2] = it
+  primal[^2] = it
 
   primal[^1] = quote do:
-    `stack`.push(true)
     `body`
+    `stack`.push(true)
 
   result.primal = quote do:
-    `primal`
     `stack`.push(false)
+    `primal`
 
   result.adjoint = quote do:
     while `stack`.pop(bool):
@@ -328,15 +328,17 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
     stack = context.stack
     (condition, conditionAdjoint) = context.genNode(primal[0], nil)
     (body, bodyAdjoint) = context.genBlock(primal[1], nil, primal)
+    didEnterSym = genSym(nskLet)
 
-  primal[0] = quote do:
-    let didEnter = `condition`
-    `stack`.push(didEnter)
-    didEnter
+  primal[0] = condition
 
-  primal[1] = body
+  primal[1] = quote do:
+    `body`
+    `stack`.push(true)
 
-  result.primal = primal
+  result.primal = quote do:
+    `stack`.push(false)
+    `primal`
 
   result.adjoint = quote do:
     while `stack`.pop(bool):
