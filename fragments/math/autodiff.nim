@@ -54,26 +54,26 @@
 
 import macros, math
 
-proc prod(items: openarray[int]): int =
-  result = 1
-  for item in items:
-    result *= item
+# proc prod(items: openarray[int]): int =
+#   result = 1
+#   for item in items:
+#     result *= item
 
-type
-  Tensor[T; shape: static openarray[int]] = object
-    data: array[prod(shape), T]
+# type
+#   Tensor[T; shape: static openarray[int]] = object
+#     data: array[prod(shape), T]
 
-  Matrix[T; height, width: static int] = Tensor[T, [height, width]]
+#   Matrix[T; height, width: static int] = Tensor[T, [height, width]]
 
-  Vector[T; size: static int] = Tensor[T, [size]]
+#   Vector[T; size: static int] = Tensor[T, [size]]
 
-proc shape*(T: typedesc[Matrix]): array[2, int] {.inline.} = [T.height, T.width]
-proc shape*(T: typedesc[Vector]): array[1, int] {.inline.} = [T.size]
+# proc shape*(T: typedesc[Matrix]): array[2, int] {.inline.} = [T.height, T.width]
+# proc shape*(T: typedesc[Vector]): array[1, int] {.inline.} = [T.size]
 
-var
-  t: Tensor[float32, [3, 4, 5]]
-  m: Matrix[float32, 4, 3]
-  v: Vector[float32, 4]
+# var
+#   t: Tensor[float32, [3, 4, 5]]
+#   m: Matrix[float32, 4, 3]
+#   v: Vector[float32, 4]
 
 # echo t.shape
 # echo t.data.len
@@ -600,42 +600,60 @@ macro gradient*(independent: typed; body: typed): untyped =
 
   echo repr result
 
-var x: float = 1.0
-let d = gradient x:
-  # var y = x
-  # for i in 0 ..< 2:
-  #   y = y + x
-  # y
-
-  var y = x
-  var i = 0
-  while i < 2:
-    y = y + x
-    # if true:
-    #   break
-    #y = y + x
-    inc i
-  y
-
-  # let y = foo(sin(x))
-  # let z = sin(y)
-  # sin(z)
-
-
-  # if true:
-  #   foo(1.0)
-  # else:
-  #   foo(2.0)
-
-echo d
-
 when isMainModule:
   var stack: Stack
   stack.push(1.int)
   echo stack.pop(int)
 
-  # let y = sin(x)
-  # tan(y)
+  block:
+    var x: float = 1.0
+    let d = gradient x:
+      # var y = x
+      # for i in 0 ..< 2:
+      #   y = y + x
+      # y
+    
+      var y = x
+      var i = 0
+      while i < 2:
+        y = y + x
+        # if true:
+        #   break
+        #y = y + x
+        inc i
+      y
+    
+      # let y = foo(sin(x))
+      # let z = sin(y)
+      # sin(z)
+    
+    
+      # if true:
+      #   foo(1.0)
+      # else:
+      #   foo(2.0)
+    
+    echo d
 
-  # let dx = dtan(y, 1.0, result)
-  # dsin(x, dx, y)
+  import torch
+
+  converter toTensor(x: float): Tensor = torch.tensor([x])
+
+  proc adjointTanh*(x, originalResult, seed: Tensor): Tensor {.adjointOf: tanh.} =
+    tanh_backward_impl(seed.expand(originalResult.sizes()), originalResult)
+
+  proc `+=`(self: var Tensor; other: Tensor) =
+    if not self.is_defined:
+      self = other
+    else:
+      self = self + other#.sum_to()
+
+  var
+    x = torch.tensor([[0.1, 0.3], [-0.4, 0.2]])
+    y = torch.tensor([[0.7, -0.5], [0.1, 0.1]])
+    z = torch.tensor([[0.2, -0.4], [-0.5, -0.2]])
+
+  let r = gradient x:
+    ((x + y) * y).sin() + (z - x).tanh()
+
+  echo r
