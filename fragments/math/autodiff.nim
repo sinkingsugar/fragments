@@ -2,27 +2,27 @@
 
 # TODO: If a value/symbol is defined in the same loop level as a usage, it doesn't need to be loaded from the stack
 
-# func 𝒟*[T: SomeFloat](f: proc(x: T): T): proc(x: T): T = discard
-# func 𝒟*[T: SomeFloat](f: proc(x, y: T): T): proc(x, y: T): (T, T) = discard
-# func 𝒟*[T: SomeFloat](f: proc(x, y, z: T): T): proc(x, y, z: T): (T, T, T) = discard
+# proc 𝒟*[T: SomeFloat](f: proc(x: T): T): proc(x: T): T = discard
+# proc 𝒟*[T: SomeFloat](f: proc(x, y: T): T): proc(x, y: T): (T, T) = discard
+# proc 𝒟*[T: SomeFloat](f: proc(x, y, z: T): T): proc(x, y, z: T): (T, T, T) = discard
 
 # type
 #   Vector[T; size: static int] = array[size, T]
 #   Matrix[T; height, width: static int] = array[height, array[width, T]]
 
-#   Function[T; n, m: static int] = proc(x: Vector[T, n]): Vector[T, m]
+#   proction[T; n, m: static int] = proc(x: Vector[T, n]): Vector[T, m]
 #   Derivative[T; n, m: static int] = proc(x: Vector[T, n]): Matrix[T, m, n]
 
-# func `*`*[T; n, m: static int](a: Vector[T, n]; b: Matrix[T, n, m]): Vector[T, m] = discard 
+# proc `*`*[T; n, m: static int](a: Vector[T, n]; b: Matrix[T, n, m]): Vector[T, m] = discard 
 
-# func 𝒟*[T: SomeFloat; n, m: static int](f: Function[T, n, m]): Derivative[T, n, m] = discard
+# proc 𝒟*[T: SomeFloat; n, m: static int](f: proction[T, n, m]): Derivative[T, n, m] = discard
 
-# func pullback*[T: SomeFloat; n, m: static int](
-#   f: Function[T, n, m], x: Vector[T, n]): Function[T, m, n] =
+# proc pullback*[T: SomeFloat; n, m: static int](
+#   f: proction[T, n, m], x: Vector[T, n]): proction[T, m, n] =
 #   return proc(adjoint: Vector[T, m]): Vector[T, n] = adjoint * 𝒟(f)(x)
 
-# func differential*[T: SomeFloat; n, m: static int](
-#   f: Function[T, n, m], x: Vector[T, n]): Function[T, n, m] =
+# proc differential*[T: SomeFloat; n, m: static int](
+#   f: proction[T, n, m], x: Vector[T, n]): proction[T, n, m] =
 #   return proc(tangent: Vector[T, n]): Vector[T, m] = 𝒟(f)(x) * tangent
 
 # macro gradient(fn: proc; at: typed): proc =
@@ -54,7 +54,7 @@
 
 import macros, math
 
-func prod(items: openarray[int]): int =
+proc prod(items: openarray[int]): int =
   result = 1
   for item in items:
     result *= item
@@ -119,100 +119,100 @@ macro tangentOf*(sym: untyped; procDef: untyped): untyped =
   info.tangents.add(procDef.name)
   return procDef
 
-func adjointNeg*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: `-`.} =
-  -seed
+# proc adjointNeg*[T](x, originalResult, seed: T): T {.adjointOf: `-`.} =
+#   -seed
 
-func tangentNeg*(x: Dual[SomeFloat];  originalResult, seed: SomeFloat): SomeFloat =
+proc tangentNeg*[T](x: Dual[T];  originalResult, seed: T): T =
   -x.derivative
 
-func adjointAdd*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `+`.} =
+proc adjointAdd*[T](left, right, originalResult, seed: T): tuple[left, right: T] {.adjointOf: `+`.} =
   (seed, seed)
 
-func tangentAdd*(left, right: Dual[SomeFloat], originalResult: SomeFloat): SomeFloat =
+proc tangentAdd*[T](left, right: Dual[T], originalResult: T): T =
   left.derivative + right.derivative
 
-func adjointSub*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `-`.} =
+proc adjointSub*[T](left, right, originalResult, seed: T): tuple[left, right: T] {.adjointOf: `-`.} =
   (seed, -seed)
 
-func tangentSub*(left, right: Dual[SomeFloat], originalResult: SomeFloat): SomeFloat =
+proc tangentSub*[T](left, right: Dual[T], originalResult: T): T =
   left.derivative - right.derivative
 
-func adjointMul*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `*`.} =
+proc adjointMul*[T](left, right, originalResult, seed: T): tuple[left, right: T] {.adjointOf: `*`.} =
   (seed * right, seed * left)
 
-func tangentMul*(left, right: Dual[SomeFloat]; seed: SomeFloat): SomeFloat =
+proc tangentMul*[T](left, right: Dual[T]; seed: T): T =
   (left.derivative * right.value + left.value * right.derivative)
 
-func adjointDiv*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `/`.} =
+proc adjointDiv*[T](left, right, originalResult, seed: T): tuple[left, right: T] {.adjointOf: `/`.} =
   (seed / right, -seed * left / (right * right))
 
-func tangentDiv*(left, right: Dual[SomeFloat]; seed: SomeFloat): SomeFloat =
+proc tangentDiv*[T](left, right: Dual[T]; seed: T): T =
   (left.derivative * right.value - left.value * right.derivative) / (right.value)
 
-func adjointSqrt*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: sqrt.} =
+proc adjointSqrt*[T](x, originalResult, seed: T): T {.adjointOf: sqrt.} =
   seed / (2 * originalResult)
 
-func adjointExp*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointExp*[T](x, originalResult, seed: T): T {.adjointOf: exp.} =
   seed * originalResult
 
-func tangentExp*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: exp.} =
+proc tangentExp*[T](x: Dual[T]; originalResult, seed: T): T =
   x.derivative * exp(x.value)
 
-func adjointLog*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointLog*[T](x, originalResult, seed: T): T {.adjointOf: log.} =
   seed / x
 
-func tangentLog*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: log.} =
+proc tangentLog*[T](x: Dual[T]; originalResult, seed: T): T =
   x.derivative / x.value
 
-func adjointSin*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointSin*[T](x, originalResult, seed: T): T {.adjointOf: sin.} =
   cos(x) * seed
 
-func tangentSin*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: sin.} =
+proc tangentSin*[T](x: Dual[T]; originalResult, seed: T): T =
   x.derivative * cos(x.value)
 
-func adjointCos*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointCos*[T](x, originalResult, seed: T): T {.adjointOf: cos.} =
   -sin(x) * seed
 
-func tangentCos*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: cos.} =
+proc tangentCos*[T](x: Dual[T]; originalResult, seed: T): T =
   -x.derivative * sin(x.value)
 
-func adjointTan*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: tan.} =
+proc adjointTan*[T](x, originalResult, seed: T): T {.adjointOf: tan.} =
   seed * (1 + originalResult * originalResult)
 
-# func adjointAsin*(x, originalResult, seed: SomeFloat): SomeFloat =
+# proc adjointAsin*[T](x, originalResult, seed: T): T =
 #   seed * (-x * seed + 1).rsqrt()
 
-# func adjointAcos*(x, originalResult, seed: SomeFloat): SomeFloat =
+# proc adjointAcos*[T](x, originalResult, seed: T): T =
 #   seed * -(-x * seed + 1).rsqrt()
 
-func adjointAtan*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointAtan*[T](x, originalResult, seed: T): T =
   seed / (x * x + 1)
 
-func adjointSinh*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointSinh*[T](x, originalResult, seed: T): T =
   cosh(x) * seed
 
-func adjointCosh*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointCosh*[T](x, originalResult, seed: T): T =
   -sinh(x) * seed
 
-func foo*(x: SomeFloat): SomeFloat =
+proc foo*[T](x: T): T =
   sin(x)
 
-func adjointFoo*(x, originalResult, seed: SomeFloat): SomeFloat =
+proc adjointFoo*[T](x, originalResult, seed: T): T =
   cos(x) * seed
 
-func adjointFoo*(x, seed, adjoint: SomeFloat): SomeFloat =
+proc adjointFoo*[T](x, seed, adjoint: T): T =
   cos(x) * adjoint
 
 type
   Stack = object
     data: seq[byte]
 
-func push[T](self: var Stack; value: T) =
+proc push[T](self: var Stack; value: T) =
   let offset = self.data.len
   self.data.setLen(offset + sizeof(T))
   cast[ptr T](addr self.data[offset])[] = value
 
-func pop(self: var Stack; T: typedesc): T =
+proc pop(self: var Stack; T: typedesc): T =
   let offset = self.data.len - sizeof(T)
   result = cast[ptr T](addr self.data[offset])[]
   self.data.setLen(offset)
@@ -536,8 +536,8 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
       var adjointSym: NimNode
       block findAdjointSym:
-      for item in context.adjointSymbols:
-        if item[0] == primal:
+        for item in context.adjointSymbols:
+          if item[0] == primal:
             adjointSym = item[1]
             break findAdjointSym
 
@@ -549,7 +549,7 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
         context.blocks[0].primal.insert(0, quote do:
           var `adjointSym`: `adjointType`)
 
-          result.adjoint = quote do: `adjointSym` += `seed`
+      result.adjoint = quote do: `adjointSym` += `seed`
 
     of nnkProcDef, nnkFuncDef, nnkMethodDef, nnkTypeSection, nnkConstSection: return (primal, newStmtList())
 
@@ -564,7 +564,7 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
   # return quote do:
   #   (proc() = `newBody`)
   
-func bar*(x: SomeFloat): SomeFloat = foo(x)
+proc bar*(x: SomeFloat): SomeFloat = foo(x)
 
 #let seed = gradient(bar)
 
