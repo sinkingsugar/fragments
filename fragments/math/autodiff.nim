@@ -107,20 +107,18 @@ proc getOrCreateProcInfo(sym: NimNode): ProcInfo {.compileTime.} =
   result = ProcInfo(sym: ident)
   procs.add(result)
 
-macro adjointOf*(sym: untyped; procDef: untyped): untyped =
+macro adjointOf*(sym: untyped; procDef: typed): untyped =
   expectKind(procDef, { nnkProcDef, nnkFuncDef })
   let info = getOrCreateProcInfo(sym)
   info.adjoints.add(procDef.name)
-  return procDef
 
-macro tangentOf*(sym: untyped; procDef: untyped): untyped =
+macro tangentOf*(sym: untyped; procDef: typed): untyped =
   expectKind(procDef, { nnkProcDef, nnkFuncDef })
   let info = getOrCreateProcInfo(sym)
   info.tangents.add(procDef.name)
-  return procDef
 
-# proc adjointNeg*[T](x, originalResult, seed: T): T {.adjointOf: `-`.} =
-#   -seed
+proc adjointNeg*[T](x, originalResult, seed: T): T {.adjointOf: `-`.} =
+  -seed
 
 proc tangentNeg*[T](x: Dual[T];  originalResult, seed: T): T =
   -x.derivative
@@ -243,7 +241,7 @@ proc getAdjoint(sym: NimNode): NimNode {.compileTime.} =
  
   for p in procs:
     if $sym == $p.sym:
-      return p.adjoints[0]
+      return nnkClosedSymChoice.newTree(p.adjoints)
 
   # let
   #   procDef = sym.getImpl()
