@@ -266,24 +266,35 @@ type
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result
 
 proc genPushPop(context: Context; primal: NimNode; typ: NimNode = nil): Result =
+
   if context.isInLoop():
     let
       stack = context.stack
       primalType = if typ != nil: typ else: primal.getType()
 
-    result.primal = quote do:
-      let temp = `primal`
-      `stack`.push(temp)
-      temp
+    if primal.kind == nnkSym:
+      result.primal = quote do:
+        `stack`.push(`primal`)
+        `primal`
+    else:
+      result.primal = quote do:
+        let temp = `primal`
+        `stack`.push(temp)
+        temp
+
     result.adjoint = quote do:
       `stack`.pop(type(`primalType`))
 
   else:
-    let tempSym = genSym(nskLet)
-    result.primal = quote do:
-      let `tempSym` = `primal`
-      `tempSym`
-    result.adjoint = tempSym
+    if primal.kind == nnkSym and primal.symKind == nskLet:
+      result.primal = primal
+      result.adjoint = primal
+    else:
+      let tempSym = genSym(nskLet)
+      result.primal = quote do:
+        let `tempSym` = `primal`
+        `tempSym`
+      result.adjoint = tempSym
 
 proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
   
@@ -297,7 +308,6 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
     adjointCall = newCall(adjointSym)
     adjointResultSym = genSym(nskLet)
     adjointParams = newStmtList()
-    primalResultSym = genSym(nskLet)
 
   var primalParams: seq[NimNode]
 
@@ -313,24 +323,33 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
     let
       (primalChild, adjointChild) = context.genNode(primal[i], `paramSeed`)
       (pushParam, popParam) = context.genPushPop(primalChild)
-      primalParam = genSym(nskLet)
     
     primal[i] = pushParam
 
-    primalParams.add(primalParam)
-    result.adjoint.insert(0, quote do:
-      let`primalParam` = `popParam`)
+    # Fast-path when no dynamic stack is needed
+    if popParam.kind == nnkSym:
+      primalParams.add(popParam)
+    else:
+      let primalParam = genSym(nskLet)
+      primalParams.add(primalParam)
+      result.adjoint.insert(0, quote do:
+        let`primalParam` = `popParam`)
 
     adjointParams.add(adjointChild)
-    
-  let (pushResult, popResult) = context.genPushPop(primal)
-
-  # Fetch the primal result first
-  result.adjoint.insert(0, quote do:
-    let `primalResultSym` = `popResult`)
 
   adjointCall.add(primalParams)
+
+  # Fetch the primal result first
+  let (pushResult, popResult) = context.genPushPop(primal)
+  var primalResultSym: NimNode
+  if popResult.kind == nnkSym:
+    primalResultSym = popResult
+  else:
+    primalResultSym = genSym(nskLet)
+    result.adjoint.insert(0, quote do:
+      let `primalResultSym` = `popResult`)
   adjointCall.add(primalResultSym)
+
   adjointCall.add(seed)
 
   result.adjoint.add quote do:
@@ -552,19 +571,6 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
     of nnkProcDef, nnkFuncDef, nnkMethodDef, nnkTypeSection, nnkConstSection: return (primal, newStmtList())
 
     else: error("Unhandled node kind: " & $primal.kind, primal)
-
-#macro gradient*(body: typed): untyped =
-  # let def = body.getImpl()
-  # echo def.astGenRepr
-
-  # let newBody = genNode(def.body)
-
-  # return quote do:
-  #   (proc() = `newBody`)
-  
-proc bar*(x: SomeFloat): SomeFloat = foo(x)
-
-#let seed = gradient(bar)
 
 macro gradient*(independent: typed; body: typed): untyped =
   #echo astGenRepr body
