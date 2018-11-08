@@ -85,61 +85,123 @@ var
 # t.data[0] = 1.0
 # echo t.data[0]
 
-func tangentNeg*(self, grad, originalResult: SomeFloat): SomeFloat =
-  -grad
+type
+  Dual*[T] = tuple[primal, derivative: T]
 
-func tangentAdd*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
-  (grad, grad)
+  ProcInfo = ref object
+    sym: NimNode
+    tangents: seq[NimNode]
+    adjoints: seq[NimNode]
 
-func tangentSub*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
-  (grad, -grad)
+var procs {.compiletime.}: seq[ProcInfo]
 
-func tangentMul*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
-  (grad * right, grad * left)
+proc getOrCreateProcInfo(sym: NimNode): ProcInfo {.compileTime.} =
+  var ident = sym
+  if ident.kind == nnkAccQuoted:
+    ident = ident[0]
+  expectKind(ident, nnkIdent)
 
-func tangentDiv*(left, right, grad, originalResult: SomeFloat): tuple[left, right: SomeFloat] =
-  (grad / right, -grad * left / (right * right))
+  for p in procs:
+    if p.sym == ident:
+      return p
+  result = ProcInfo(sym: ident)
+  procs.add(result)
 
-func tangentSqrt*(x, dx, originalResult: SomeFloat): SomeFloat =
-  dx / (2 * originalResult)
+macro adjointOf*(sym: untyped; procDef: untyped): untyped =
+  expectKind(procDef, { nnkProcDef, nnkFuncDef })
+  let info = getOrCreateProcInfo(sym)
+  info.adjoints.add(procDef.name)
+  return procDef
 
-func tangentExp*(x, dx, originalResult: SomeFloat): SomeFloat =
-  dx * originalResult
+macro tangentOf*(sym: untyped; procDef: untyped): untyped =
+  expectKind(procDef, { nnkProcDef, nnkFuncDef })
+  let info = getOrCreateProcInfo(sym)
+  info.tangents.add(procDef.name)
+  return procDef
 
-func tangentSin*(x, dx, originalResult: SomeFloat): SomeFloat =
-  cos(x) * dx
+func adjointNeg*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: `-`.} =
+  -seed
 
-func tangentCos*(x, dx, originalResult: SomeFloat): SomeFloat =
-  -sin(x) * dx
+func tangentNeg*(x: Dual[SomeFloat];  originalResult, seed: SomeFloat): SomeFloat =
+  -x.derivative
 
-func tangentTan*(x, dx, originalResult: SomeFloat): SomeFloat =
-  dx * (1 + originalResult * originalResult)
+func adjointAdd*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `+`.} =
+  (seed, seed)
 
-# func tangentAsin*(x, dx, originalResult: SomeFloat): SomeFloat =
-#   dx * (-x * dx + 1).rsqrt()
+func tangentAdd*(left, right: Dual[SomeFloat], originalResult: SomeFloat): SomeFloat =
+  left.derivative + right.derivative
 
-# func tangentAcos*(x, dx, originalResult: SomeFloat): SomeFloat =
-#   dx * -(-x * dx + 1).rsqrt()
+func adjointSub*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `-`.} =
+  (seed, -seed)
 
-func tangentAtan*(x, dx, originalResult: SomeFloat): SomeFloat =
-  dx / (x * x + 1)
+func tangentSub*(left, right: Dual[SomeFloat], originalResult: SomeFloat): SomeFloat =
+  left.derivative - right.derivative
 
-func tangentSinh*(x, dx, originalResult: SomeFloat): SomeFloat =
-  cosh(x) * dx
+func adjointMul*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `*`.} =
+  (seed * right, seed * left)
 
-func tangentCosh*(x, dx, originalResult: SomeFloat): SomeFloat =
-  -sinh(x) * dx
+func tangentMul*(left, right: Dual[SomeFloat]; seed: SomeFloat): SomeFloat =
+  (left.derivative * right.value + left.value * right.derivative)
+
+func adjointDiv*(left, right, originalResult, seed: SomeFloat): tuple[left, right: SomeFloat] {.adjointOf: `/`.} =
+  (seed / right, -seed * left / (right * right))
+
+func tangentDiv*(left, right: Dual[SomeFloat]; seed: SomeFloat): SomeFloat =
+  (left.derivative * right.value - left.value * right.derivative) / (right.value)
+
+func adjointSqrt*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: sqrt.} =
+  seed / (2 * originalResult)
+
+func adjointExp*(x, originalResult, seed: SomeFloat): SomeFloat =
+  seed * originalResult
+
+func tangentExp*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: exp.} =
+  x.derivative * exp(x.value)
+
+func adjointLog*(x, originalResult, seed: SomeFloat): SomeFloat =
+  seed / x
+
+func tangentLog*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: log.} =
+  x.derivative / x.value
+
+func adjointSin*(x, originalResult, seed: SomeFloat): SomeFloat =
+  cos(x) * seed
+
+func tangentSin*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: sin.} =
+  x.derivative * cos(x.value)
+
+func adjointCos*(x, originalResult, seed: SomeFloat): SomeFloat =
+  -sin(x) * seed
+
+func tangentCos*(x: Dual[SomeFloat]; originalResult, seed: SomeFloat): SomeFloat {.adjointOf: cos.} =
+  -x.derivative * sin(x.value)
+
+func adjointTan*(x, originalResult, seed: SomeFloat): SomeFloat {.adjointOf: tan.} =
+  seed * (1 + originalResult * originalResult)
+
+# func adjointAsin*(x, originalResult, seed: SomeFloat): SomeFloat =
+#   seed * (-x * seed + 1).rsqrt()
+
+# func adjointAcos*(x, originalResult, seed: SomeFloat): SomeFloat =
+#   seed * -(-x * seed + 1).rsqrt()
+
+func adjointAtan*(x, originalResult, seed: SomeFloat): SomeFloat =
+  seed / (x * x + 1)
+
+func adjointSinh*(x, originalResult, seed: SomeFloat): SomeFloat =
+  cosh(x) * seed
+
+func adjointCosh*(x, originalResult, seed: SomeFloat): SomeFloat =
+  -sinh(x) * seed
 
 func foo*(x: SomeFloat): SomeFloat =
   sin(x)
 
-func tangentFoo*(x, dx, originalResult: SomeFloat): SomeFloat =
-  cos(x) * dx
+func adjointFoo*(x, originalResult, seed: SomeFloat): SomeFloat =
+  cos(x) * seed
 
-func adjointFoo*(x, dx, adjoint: SomeFloat): SomeFloat =
+func adjointFoo*(x, seed, adjoint: SomeFloat): SomeFloat =
   cos(x) * adjoint
-
-#pullback(foo)
 
 type
   Stack = object
@@ -167,6 +229,7 @@ type
     head: NimNode
     primal: NimNode
     adjoint: NimNode
+    breakCount: int
 
 proc currentBlock(context: Context): Block =
   context.blocks[^1]
@@ -176,10 +239,11 @@ proc isInLoop(context: Context): bool =
     if b.head.kind in { nnkForStmt, nnkWhileStmt }:
       return true
 
-proc getTangent(sym: NimNode): NimNode =
-  if $sym == "+": return bindSym"tangentAdd"
-  elif $sym == "*": return bindSym"tangentMul"
-  elif $sym == "sin": return bindSym"tangentSin"
+proc getAdjoint(sym: NimNode): NimNode {.compileTime.} =
+ 
+  for p in procs:
+    if $sym == $p.sym:
+      return p.adjoints[0]
 
   # let
   #   procDef = sym.getImpl()
@@ -191,12 +255,12 @@ proc getTangent(sym: NimNode): NimNode =
   #   param[^1] = newEmptyNode()
   #   gradType.add(param)
 
-  # let tangentProcSym = genSym(nskProc)
-  # let tangentProcDef = quote do:
-  #   proc `tangentProcSym`(inputs: ; seed: `gradType`; originalResult: `resultType`): `inputType` =
-  #     `tangentBody`
+  # let adjointProcSym = genSym(nskProc)
+  # let adjointProcDef = quote do:
+  #   proc `adjointProcSym`(inputs: ; seed: `gradType`; originalResult: `resultType`): `inputType` =
+  #     `adjointBody`
 
-  # return tangentProcSym
+  # return adjointProcSym
 
 type
   Result = tuple[primal, adjoint: NimNode]
@@ -225,14 +289,14 @@ proc genPushPop(context: Context; primal: NimNode; typ: NimNode = nil): Result =
 
 proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
   
-  let tangentSym = primal[0].getTangent()
-  if tangentSym == nil:
+  let adjointSym = primal[0].getAdjoint()
+  if adjointSym == nil:
     return (primal, newStmtList())
     # error($primal[0] & " is not differentiable.", primal)
   
   let
     stack = context.stack
-    adjointCall = newCall(tangentSym)
+    adjointCall = newCall(adjointSym)
     adjointResultSym = genSym(nskLet)
     adjointParams = newStmtList()
     primalResultSym = genSym(nskLet)
@@ -268,8 +332,8 @@ proc genCall(context: Context; primal: NimNode; seed: NimNode): Result =
     let `primalResultSym` = `popResult`)
 
   adjointCall.add(primalParams)
-  adjointCall.add(seed)
   adjointCall.add(primalResultSym)
+  adjointCall.add(seed)
 
   result.adjoint.add quote do:
     let `adjointResultSym` = `adjointCall`
@@ -373,19 +437,16 @@ proc genWhile(context: Context; primal: NimNode; seed: NimNode): Result =
     `conditionAdjoint`
 
 proc genBreak(context: Context; primal: NimNode; targetBlockIndex: int): Result =
-  let
-    condition = genSym(nskLet)
-    (pushCondition, popCondition) = context.genPushPop(condition, bindSym"bool")
 
+  let stack = context.stack
   result.primal = quote do:
-    let `condition` = false
-    discard `pushCondition`
-    `primal`  
+    `stack`.push(false) # The following block did not execute
+    `primal` 
 
   result.adjoint = newStmtList()
 
-  # for i in countdown(context.blocks.high, targetBlockIndex):
-  #   context.blocks[i].conditions.add(condition)
+  for i in countdown(context.blocks.high, targetBlockIndex):
+    inc context.blocks[i].breakCount
 
 proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
 
@@ -478,6 +539,8 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
           result.adjoint = quote do: `adjointSym` += `seed`
           break
 
+    of nnkProcDef, nnkFuncDef, nnkMethodDef, nnkTypeSection, nnkConstSection: return (primal, newStmtList())
+
     else: error("Unhandled node kind: " & $primal.kind, primal)
 
 #macro gradient*(body: typed): untyped =
@@ -491,7 +554,7 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
   
 func bar*(x: SomeFloat): SomeFloat = foo(x)
 
-#let grad = gradient(bar)
+#let seed = gradient(bar)
 
 macro gradient*(independent: typed; body: typed): untyped =
   #echo astGenRepr body
