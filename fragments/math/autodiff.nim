@@ -532,12 +532,24 @@ proc genNode(context: Context; primal: NimNode; seed: NimNode): Result =
       if primal.getType().typeKind == ntyBool:
         return (primal, newStmtList())
 
+      result.primal = primal
+
+      var adjointSym: NimNode
+      block findAdjointSym:
       for item in context.adjointSymbols:
         if item[0] == primal:
-          let adjointSym = item[1]
-          result.primal = primal
+            adjointSym = item[1]
+            break findAdjointSym
+
+        # It's variable that was not declared in the transforms body
+        adjointSym = genSym(nskVar)
+        context.adjointSymbols.add((primal, adjointSym))
+
+        let adjointType = primal.getType()
+        context.blocks[0].primal.insert(0, quote do:
+          var `adjointSym`: `adjointType`)
+
           result.adjoint = quote do: `adjointSym` += `seed`
-          break
 
     of nnkProcDef, nnkFuncDef, nnkMethodDef, nnkTypeSection, nnkConstSection: return (primal, newStmtList())
 
