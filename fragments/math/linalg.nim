@@ -309,7 +309,7 @@ func lengthSquared*(self: Vector): Vector.T =
   dot(self, self)
 
 func length*(self: Vector): Vector.T =
-  sqrt(self.lengthSquared)
+  self.lengthSquared().sqrt()
 
 func distanceSquared*(left, right: Vector): Vector.T =
   (left - right).lengthSquared
@@ -343,27 +343,29 @@ func lerp*(min, max: Vector; amount: Vector.T): Vector =
 
 func smoothstep*(min, max: Vector; amount: Vector.T): Vector =
   var lerpAmount = saturate(amount)
-  var lerpAmount = lerpAmount * lerpAmount * (3 - (2 * lerpAmount))
+  lerpAmount = lerpAmount * lerpAmount * (3 - (2 * lerpAmount))
   return lerp(min, max, lerpAmount)
 
 func hermite*(value1, value2, tangent1, tangent2: Vector, amount: Vector.T): Vector =
-  let squared = amount * amount
-  let cubed = amount * squared
-  let part1 = ((2 * cubed) - (3 * squared)) + 1
-  let part2 = (-2 * cubed) + (3 * squared)
-  let part3 = (cubed - (2 * squared)) + amount
-  let part4 = cubed - squared
+  let
+    squared = amount * amount
+    cubed = amount * squared
+    part1 = ((2 * cubed) - (3 * squared)) + 1
+    part2 = (-2 * cubed) + (3 * squared)
+    part3 = (cubed - (2 * squared)) + amount
+    part4 = cubed - squared
 
   return (((value1 * part1) + (value2 * part2)) + (tangent1 * part3)) + (tangent2 * part4);
 
 func catmullRom*(value1, value2, value3, value4: Vector, amount: Vector.T): Vector =
-  let squared = amount * amount
-  let cubed = squared * amount
+  let
+    squared = amount * amount
+    cubed = squared * amount
 
-  let factor0 = -cubed + 2 * squared - amount
-  let factor1 = 3 * cubed - 5 * squared + 2
-  let factor2 = -3 * cubed + 4 * squared + amount
-  let factor3 = cubed - squared
+    factor0 = -cubed + 2 * squared - amount
+    factor1 = 3 * cubed - 5 * squared + 2
+    factor2 = -3 * cubed + 4 * squared + amount
+    factor3 = cubed - squared
 
   return 0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
 
