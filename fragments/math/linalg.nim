@@ -320,7 +320,7 @@ func distanceSquared*(left, right: Vector): Vector.T =
 func distance*(left, right: Vector): Vector.T =
   (left - right).length
 
-func normalized*(self: Vector): Vector =
+func normalize*(self: Vector): Vector =
   let length = self.length
   if length > 0:
     return self / self.length
@@ -333,7 +333,7 @@ func lengthSquared*(self: QuaternionBase): QuaternionBase.T =
 func length*(self: QuaternionBase): QuaternionBase.T =
   sqrt(self.lengthSquared)
     
-func normalized*(self: QuaternionBase): QuaternionBase =
+func normalize*(self: QuaternionBase): QuaternionBase =
   let length = self.length
   if length > 0:
     return self / self.length
@@ -430,7 +430,7 @@ func concatenate*(first, second: QuaternionBase): QuaternionBase =
 func rotationAxisQuaternion*[T](axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
   # TODO: identity if zero axis?
   let halfAngle = angle * (T)0.5;
-  result.xyz = axis.normalized * sin(halfAngle)
+  result.xyz = axis.normalize() * sin(halfAngle)
   result.w = cos(halfAngle)
 
 # Matrix multiplication
@@ -601,8 +601,8 @@ func orhographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
 func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
 
   let
-    zAxis = (eye - target).normalized
-    xAxis = cross(up, zAxis).normalized
+    zAxis = (eye - target).normalize()
+    xAxis = cross(up, zAxis).normalize()
     yAxis = cross(zAxis, xAxis)
     
   result.m00m10m20 = xAxis
