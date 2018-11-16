@@ -22,6 +22,9 @@ type
   Matrix*[T; height, width: static[int]] = object
     elements: array[width * height, T]
 
+  SymmetricMatrix*[T; size: static[int]] = object
+    elements: array[size * (size + 1) div 2, T]
+
   # Common vector types
   Vector2* = Vector[float32, 2]
   Vector3* = Vector[float32, 3]
@@ -492,7 +495,7 @@ func rotationZ*[T](angle: T): Matrix[T, 4, 4] =
 func rotationYawPitchRoll*[T](yaw, pitch, roll: T): Matrix[T, 4, 4] =
   rotationZ(roll) * rotationX(pitch) * rotationY(yaw)
 
-func rotationQuaternion*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
+func toMatrix*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
   let
     xx = rotation.x * rotation.x
     yy = rotation.y * rotation.y
@@ -513,6 +516,47 @@ func rotationQuaternion*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
   result.m20 = 2.T * (zx + yw)
   result.m21 = 2.T * (yz - xw)
   result.m22 = 1.T - (2.T * (yy + xx))
+
+func toQuaternion*[T](self: Matrix[T, 3, 3] | Matrix[T, 4, 4]): QuaternionBase[T] =
+  let scale = self.m00 + self.m11 + self.m22
+  
+  if scale > 0.T:
+    let
+      sqrt = sqrt(scale + 1.T)
+      half = (T)0.5 / sqrt
+    
+    result.w = (T)0.5 * sqrt
+    result.xyz = (self.m12m20m01 - self.m21m02m10) * half
+    
+  elif (self.m00 >= self.m11) and (self.m00 >= self.m22):
+    let 
+      sqrt = sqrt(1.0 + self.m00 - self.m11 - self.m22)
+      half = (T)0.5 / sqrt;
+  
+    result.x = (T)0.5 * sqrt;
+    result.y = (self.m01 + self.m10) * half
+    result.z = (self.m02 + self.m20) * half
+    result.w = (self.m12 - self.m21) * half
+  
+  elif self.m11 > self.m22:
+    let
+      sqrt = sqrt(1.0f + self.m11 - self.m00 - self.m22)
+      half = (T)0.5 / sqrt;
+    
+    result.x = (self.m10 + self.m01) * half
+    result.y = (T)0.5 * sqrt
+    result.z = (self.m21 + self.m12) * half
+    result.w = (self.m20 - self.m02) * half
+    
+  else:
+    let
+      sqrt = sqrt(1.0f + self.m22 - self.m00 - self.m11)
+      half = (T)0.5 / sqrt;
+    
+    result.x = (self.m20 + self.m02) * half
+    result.y = (self.m21 + self.m12) * half
+    result.z = (T)0.5 * sqrt
+    result.w = (self.m01 - self.m10) * half
 
 func perspectiveOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
 
@@ -649,6 +693,9 @@ when isMainModule:
 
   let q = rotationAxisQuaternion(Vector3.unitX, PI/2)
   echo Vector3.unitY.transform(q)
+
+  echo q
+  echo q.toMatrix().toQuaternion()
 
 type
   Color3* = distinct Vector3
