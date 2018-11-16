@@ -370,6 +370,8 @@ func catmullRom*(value1, value2, value3, value4: Vector, amount: Vector.T): Vect
 func barycentric*(value1, value2, value3: Vector; amount1, amount2: Vector.T): Vector =
   (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
 
+func changeBasis*(self, basis: Matrix): Matrix =
+  basis.transpose() * self * basis
 
 func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
@@ -377,6 +379,9 @@ func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vect
 func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
+
+func transform*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 3, 3]): Vector[T, 3] =
+  (transform.m00m01m02 * coordinate.x) + (transform.m10m11m12 * coordinate.y) + (transform.m20m21m22 * coordinate.z)
 
 func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T, 3] =
   # Rotates a vector v by a quaternion q, through conjugation q * v * q^-1. Concatenation of rotations is therefore multiplication
