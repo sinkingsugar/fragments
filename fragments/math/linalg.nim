@@ -414,6 +414,11 @@ func `*` *[T; height, width, count: static[int]](
       for i in 0..<count:
         result[r, c] = result[r, c] + left[][r, i] * right[][i, c]
 
+func transpose*(self: Matrix): Matrix =
+  for r in 0 ..< self.height:
+    for c in 0 ..< self.width:
+      result[r, c] = self[c, r]
+
 func translation*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
   result = Matrix[T, 4, 4].identity
   result.m30m31m32 = value
