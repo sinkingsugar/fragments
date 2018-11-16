@@ -1,4 +1,4 @@
-import math, macros, strutils, vectors, math_common
+import math, macros, strutils, vectors, math_common, strformat
 export vectors
   
 {.experimental.}
@@ -103,6 +103,26 @@ func `diag=`*[T; size: static[int]](self: var Matrix[T, size, size]; value: Vect
 func toVector[T; width: static[int]](value: array[width, T]): Vector[T, width] =
   for i in 0..<width:
     result[i] = value[i]
+
+func `$`*(self: Vector): string =
+  const size = Vector.size
+  when size == 1: return fmt"(X: {self.x})"
+  elif size == 2: return fmt"(X: {self.x}, Y: {self.y})"
+  elif size == 3: return fmt"(X: {self.x}, Y: {self.y}, Z: {self.z})"
+  elif size == 4: return fmt"(X: {self.x}, Y: {self.y}, Z: {self.z}, W: {self.w})"
+  else: return $self.elements
+
+func `$`*(self: Matrix): string =
+  result = "["
+  for y in 0 ..< Matrix.height:
+    for x in 0 ..< Matrix.width:
+      result &= fmt"m{y}{x}: {self[y, x]}"
+      if x < Matrix.width - 1: result &= ", "
+    if y < Matrix.height - 1: result &= ",\n "
+    else: result &= "]" 
+  
+func `$`*(self: QuaternionBase): string =
+  fmt"(X: {self.x}, Y: {self.x}, Z: {self.z}, W: {self.w})"
 
 # Vector swizzles
 func getSwizzleIndex(c: char): int {.compileTime.} =
