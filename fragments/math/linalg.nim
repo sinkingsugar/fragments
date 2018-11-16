@@ -256,18 +256,13 @@ macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
 converter toVector*[T](value: (T, T)): Vector[T, 2] = (result.x, result.y) = value
 
 # 3 element tuples converters
-converter toVector*[T](value: (T, T, T)): Vector[T, 3] = (result.x, result.y, result.z) = value
+converter toVector*[T](value: (T, T, T)): Vector[T, 3] =
+  (result.x, result.y, result.z) = value
 
 # 4 element tuples converters
 converter toVector*[T](value: (T, T, T, T)): Vector[T, 4] = (result.x, result.y, result.z, result.w) = value
 converter toVector*[T](value: (Vector[T, 2], T, T)): Vector[T, 4] = (result.xy, result.z, result.w) = value
 converter toVector*[T](value: (Vector[T, 3], T)): Vector[T, 4] = (result.xyz, result.w) = value
-
-# func zero*(_: typedesc[Vector]): Vector =
-#   result = 0
-
-# func one*(_: typedesc[Vector]): Vector =
-#   result = 1
 
 func identity*[T](_: typedesc[QuaternionBase[T]]): QuaternionBase[T] =
   result.w = 1.T
@@ -276,7 +271,14 @@ func identity*[T; size: static[int]](_: typedesc[Matrix[T, size, size]]): Matrix
   for i in 0..<size:
     result[i, i] = 1.T
 
+func fill*[T; width: static[int]](_: typedesc[Vector[T, width]]; value: T): Vector[T, width] =
+  for i in 0..<width:
+    result[i] = value
+
 func zero*[T; width: static[int]](_: typedesc[Vector[T, width]]): Vector[T, width] = discard
+
+func one*[T; width: static[int]](_: typedesc[Vector[T, width]]): Vector[T, width] =
+  fill(_, 1.T)
 
 func unitX*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
   result.x = 1.T
@@ -301,19 +303,19 @@ func dot*(left, right: Vector): Vector.T =
     result += left[i] * right[i]
 
 func cross*[T](left, right: Vector[T, 3]): Vector[T, 3] =
-  return left.yzx * right.zxy - left.zxy * right.yzx
+  left.yzx * right.zxy - left.zxy * right.yzx
 
 func lengthSquared*(self: Vector): Vector.T =
-  return dot(self, self)
+  dot(self, self)
 
 func length*(self: Vector): Vector.T =
-  return sqrt(self.lengthSquared)
+  sqrt(self.lengthSquared)
 
 func distanceSquared*(left, right: Vector): Vector.T =
-  return (left - right).lengthSquared
+  (left - right).lengthSquared
 
 func distance*(left, right: Vector): Vector.T =
-  return (left - right).length
+  (left - right).length
 
 func normalized*(self: Vector): Vector =
   let length = self.length
@@ -323,10 +325,10 @@ func normalized*(self: Vector): Vector =
     return self
 
 func lengthSquared*(self: QuaternionBase): QuaternionBase.T =
-  return self.xyzw.lengthSquared
+  self.xyzw.lengthSquared
 
 func length*(self: QuaternionBase): QuaternionBase.T =
-  return sqrt(self.lengthSquared)
+  sqrt(self.lengthSquared)
     
 func normalized*(self: QuaternionBase): QuaternionBase =
   let length = self.length
@@ -366,10 +368,11 @@ func catmullRom*(value1, value2, value3, value4: Vector, amount: Vector.T): Vect
   return 0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
 
 func barycentric*(value1, value2, value3: Vector; amount1, amount2: Vector.T): Vector =
-  return (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
+  (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
+
 
 func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
-  return (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
+  (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
 
 func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
@@ -404,7 +407,7 @@ func project*[T](vector: Vector[T, 3]; x, y, width, height, minZ, maxZ: T; world
   result.z = (v.z * (maxZ - minZ)) + minZ
 
 func reflect*[T](vector, normal: Vector[T, 3]): Vector[T, 3] =
-  return vector - normal * 2.T# * dot(vector, normal))
+  vector - normal * 2.T# * dot(vector, normal))
 
 func `*` *(left, right: QuaternionBase): QuaternionBase =
   result.xyz = left.xyz * right.w + right.xyz * left.w + cross(left.xyz, right.xyz)
@@ -503,7 +506,6 @@ func rotationQuaternion*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
   result.m20 = 2.T * (zx + yw)
   result.m21 = 2.T * (yz - xw)
   result.m22 = 1.T - (2.T * (yy + xx))
-  result.m33 = 1.T
 
 func perspectiveOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
 
