@@ -1,7 +1,7 @@
 import macros, strutils, typetraits, tables, math
 
 type
-  Wide*[T; width: static[int]] = object
+  Wide*[T; width: static int] = object
     ## A super-scaler primitive type, used in vectorized code
     elements*: array[width, T]
 
@@ -43,7 +43,7 @@ template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
     mapInlineBinary(left, right, op)
 
 # Mark the basic wide type as vector
-template isVector*(_: typedesc[Wide]): bool = true
+template isVector*(_: type Wide): bool = true
 
 # Supported operations for all types marked as vector
 makeUniversal(SomeVector, `-`)
@@ -86,18 +86,18 @@ template `*=` *(left: var SomeVector; right: SomeVector.T) = left = left * right
 template `/=` *(left: var SomeVector; right: SomeVector.T) = left = left / right
 
 # Vectorized version of primitive types
-template scalarType*[T; width: static[int]](t: typedesc[Wide[T, width]]): typedesc = T
-template laneCount*[T; width: static[int]](t: typedesc[Wide[T, width]]): int = width
+template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
+template laneCount*[T; width: static int](t: type Wide[T, width]): int = width
 func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
 func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
 
 # Vectorized version of arrays
-template scalarType*[size: static[int]](t: typedesc[array[size, SomeWide]]): typedesc = array[size, SomeWide.T]
-template laneCount*[size: static[int]](t: typedesc[array[size, SomeWide]]): int = SomeWide.width
-func getLane*[size: static[int]; S: SomeWide](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
+template scalarType*[size: static int](t: type array[size, SomeWide]): typedesc = array[size, SomeWide.T]
+template laneCount*[size: static int](t: type array[size, SomeWide]): int = SomeWide.width
+func getLane*[size: static int; S: SomeWide](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
   for i in 0..<size:
     result[i] = wide[i].getLane(laneIndex)
-func setLane*[size: static[int]; S: SomeWide](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
+func setLane*[size: static int; S: SomeWide](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
   for i in 0..<size:
     wide[i].setLane(laneIndex, value[i])
 
@@ -203,8 +203,8 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
 
           # Satisfy the SomeWide concept and generate lane accessors
           generatedProcs.add(quote do:
-            template scalarType*(t: typedesc[`symbol`]): typedesc = `T`
-            template laneCount*(t: typedesc[`symbol`]): int = 4
+            template scalarType*(t: type `symbol`): typedesc = `T`
+            template laneCount*(t: type `symbol`): int = 4
             func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `T` {.inline.} = `getters`
             func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `T`) {.inline.} = `setters`
           )

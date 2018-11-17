@@ -12,17 +12,15 @@ export vectors
 
 type
   Half* = distinct uint16
-  
-  float16* = Half
 
-  #Vector* {.importcpp: "Vector<'0, '1>", header: "linearAlgebra.h".} [T; size: static[int]] = object
-  Vector*[T; size: static[int]] = object
+  #Vector* {.importcpp: "Vector<'0, '1>", header: "linearAlgebra.h".} [T; size: static int] = object
+  Vector*[T; size: static int] = object
     elements: array[size, T]
 
-  Matrix*[T; height, width: static[int]] = object
+  Matrix*[T; height, width: static int] = object
     elements: array[width * height, T]
 
-  SymmetricMatrix*[T; size: static[int]] = object
+  SymmetricMatrix*[T; size: static int] = object
     elements: array[size * (size + 1) div 2, T]
 
   # Common vector types
@@ -65,17 +63,17 @@ type
     v.elements.len is int
 
 # Vectorized version of primitive types
-template scalarType*[T; width: static[int]](t: typedesc[Vector[T, width]]): typedesc = T
-template laneCount*[T; width: static[int]](t: typedesc[Vector[T, width]]): int = width
+template scalarType*[T; width: static int](t: type Vector[T, width]): type = T
+template laneCount*[T; width: static int](t: type Vector[T, width]): int = width
 func getLane*(wide: Vector; laneIndex: int): Vector.T {.inline.} = wide.elements[laneIndex]
 func setLane*(wide: var Vector; laneIndex: int; value: Vector.T) {.inline.} = wide.elements[laneIndex] = value
-template isVector*(_: typedesc[Vector]): bool = true
+template isVector*(_: type Vector): bool = true
 
 # These cannot be defined using the concept, since they would conflict with the generic version in the system module
 makeUniversalBinary(Vector, min)
 makeUniversalBinary(Vector, max)
 
-# converter toVector[T; size: static[int]](value: T): Vector[T, size] =
+# converter toVector[T; size: static int](value: T): Vector[T, size] =
 #   for i in 0..<size:
 #     result[i] = value
 
@@ -94,16 +92,16 @@ func `[]=`*(self: var Matrix; row, column: int; value: Matrix.T) =
   self.elements[row * Matrix.width + column] = value
 
 # Matrix diagonal
-func diag*[T; size: static[int]](self: Matrix[T, size, size]): Vector[T, size] =
+func diag*[T; size: static int](self: Matrix[T, size, size]): Vector[T, size] =
   for i in 0..<size:
     result[i] = self[i, i]
 
-func `diag=`*[T; size: static[int]](self: var Matrix[T, size, size]; value: Vector[T, size]) =
+func `diag=`*[T; size: static int](self: var Matrix[T, size, size]; value: Vector[T, size]) =
   for i in 0..<size:
     self[i, i] = value[i]
 
 # Array to vector conversion
-func toVector[T; width: static[int]](value: array[width, T]): Vector[T, width] =
+func toVector[T; width: static int](value: array[width, T]): Vector[T, width] =
   for i in 0..<width:
     result[i] = value[i]
 
@@ -251,7 +249,7 @@ macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
           nnkBracketExpr.newTree(self, newIntLitNode(row), newIntLitNode(column)),
           nnkBracketExpr.newTree(temp, newIntLitNode(i))))
 
-# macro `{}`*(typ: typedesc[Vector], args: varargs[untyped]): auto =
+# macro `{}`*(typ: type Vector, args: varargs[untyped]): auto =
 #   for x in xs.children:
 #     if x.kind == nnkExprColonExpr:
 
@@ -267,29 +265,29 @@ converter toVector*[T](value: (T, T, T, T)): Vector[T, 4] = (result.x, result.y,
 converter toVector*[T](value: (Vector[T, 2], T, T)): Vector[T, 4] = (result.xy, result.z, result.w) = value
 converter toVector*[T](value: (Vector[T, 3], T)): Vector[T, 4] = (result.xyz, result.w) = value
 
-func identity*[T](_: typedesc[QuaternionBase[T]]): QuaternionBase[T] =
+func identity*[T](_: type QuaternionBase[T]): QuaternionBase[T] =
   result.w = 1.T
 
-func identity*[T; size: static[int]](_: typedesc[Matrix[T, size, size]]): Matrix[T, size, size] =
+func identity*[T; size: static int](_: type Matrix[T, size, size]): Matrix[T, size, size] =
   for i in 0..<size:
     result[i, i] = 1.T
 
-func fill*[T; width: static[int]](_: typedesc[Vector[T, width]]; value: T): Vector[T, width] =
+func fill*[T; width: static int](_: type Vector[T, width]; value: T): Vector[T, width] =
   for i in 0..<width:
     result[i] = value
 
-func zero*[T; width: static[int]](_: typedesc[Vector[T, width]]): Vector[T, width] = discard
+func zero*[T; width: static int](_: type Vector[T, width]): Vector[T, width] = discard
 
-func one*[T; width: static[int]](_: typedesc[Vector[T, width]]): Vector[T, width] =
+func one*[T; width: static int](_: type Vector[T, width]): Vector[T, width] =
   fill(_, 1.T)
 
-func unitX*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+func unitX*[T](_: type Vector[T, 3]): Vector[T, 3] =
   result.x = 1.T
   
-func unitY*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+func unitY*[T](_: type Vector[T, 3]): Vector[T, 3] =
   result.y = 1.T
 
-func unitZ*[T](_: typedesc[Vector[T, 3]]): Vector[T, 3] =
+func unitZ*[T](_: type Vector[T, 3]): Vector[T, 3] =
   result.z = 1.T
 
 func `*` *[T](left: QuaternionBase[T]; right: T): QuaternionBase[T] =
@@ -427,14 +425,14 @@ func concatenate*(first, second: QuaternionBase): QuaternionBase =
   # Concatenate two quaternions representing rotations. The first argument is the first rotation applied.
   second * first
 
-func fromAxisAngle*[T](_: typedesc[QuaternionBase[T]]; axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
+func fromAxisAngle*[T](_: type QuaternionBase[T]; axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
   # TODO: identity if zero axis?
   let halfAngle = angle * (T)0.5;
   result.xyz = axis.normalize() * sin(halfAngle)
   result.w = cos(halfAngle)
 
 # Matrix multiplication
-func `*` *[T; height, width, count: static[int]](
+func `*` *[T; height, width, count: static int](
   left: Matrix[T, height, count];
   right: Matrix[T, count, width]):
   Matrix[T, height, width] =
@@ -614,47 +612,47 @@ func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
   result.m32 = -dot(zAxis, eye)
   result.m33 = 1.T
 
-func all*[width: static[int]](value: Vector[bool, width]): bool =
+func all*[width: static int](value: Vector[bool, width]): bool =
   for element in value.elements:
     if not element:
       return false
   return true
 
-func any*[width: static[int]](value: Vector[bool, width]): bool =
+func any*[width: static int](value: Vector[bool, width]): bool =
   for element in value.elements:
     if element:
       return true
   return false
 
-func `not`*[width: static[int]](value: Vector[bool, width]): Vector[bool, width] =
+func `not`*[width: static int](value: Vector[bool, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = not value[i]
 
-func `==`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+func `==`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] == right[i]
 
-func `<=`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+func `<=`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] <= right[i]
 
-func `<`*[T; width: static[int]](left, right: Vector[T, width]): Vector[bool, width] =
+func `<`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] < right[i]
 
-func `and`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+func `and`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] and right[i]
 
-func `or`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+func `or`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] and right[i]
 
-func `xor`*[width: static[int]](left, right: Vector[bool, width]): Vector[bool, width] =
+func `xor`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = left[i] xor right[i]
 
-func select*[T; width: static[int]](condition: Vector[bool, width]; a, b: Vector[T, width]): Vector[T, width] =
+func select*[T; width: static int](condition: Vector[bool, width]; a, b: Vector[T, width]): Vector[T, width] =
   for i in 0 ..< width:
     result[i] = if condition[i]: a[i] else: b[i]
 
