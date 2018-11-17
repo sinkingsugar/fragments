@@ -427,7 +427,7 @@ func concatenate*(first, second: QuaternionBase): QuaternionBase =
   # Concatenate two quaternions representing rotations. The first argument is the first rotation applied.
   second * first
 
-func rotationAxisQuaternion*[T](axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
+func fromAxisAngle*[T](_: typedesc[QuaternionBase[T]]; axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
   # TODO: identity if zero axis?
   let halfAngle = angle * (T)0.5;
   result.xyz = axis.normalize() * sin(halfAngle)
@@ -691,7 +691,7 @@ when isMainModule:
   
   echo m * n
 
-  let q = rotationAxisQuaternion(Vector3.unitX, PI/2)
+  let q = Quaternion.fromAxisAngle(Vector3.unitX, PI/2)
   echo Vector3.unitY.transform(q)
 
   echo q
