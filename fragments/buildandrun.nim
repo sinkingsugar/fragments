@@ -10,6 +10,8 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   if temp == "":
     temp = "/tmp"
 
+  # check will also be in the nim global cache.. we need to think if we want to use some unique
+
   let
     code = body.repr
     checkFile = temp & "/check.nim"
