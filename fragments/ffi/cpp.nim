@@ -501,6 +501,15 @@ proc makeShared*[T](): SharedPointer[T] {.inline.} =  internalMakeShared[T]()
 
 proc getPtr*[T](up: SharedPointer[T]): ptr T {.inline.} = up.toCpp.get().to(ptr T)
 
+when defined wasm:
+  template EM_ASM*(jsCode: string): untyped =
+    {.emit: """/*INCLUDESECTION*/
+      #include <emscripten.h>
+    """.}
+    proc emAsmProc() =
+      {.emit: ["EM_ASM(", jsCode, ");"].}
+    emAsmProc()
+
 when isMainModule:
   {.emit:"#include <stdio.h>".}
   {.emit:"#include <string>".}
