@@ -18,7 +18,7 @@ RUN chmod +x Miniconda3-latest-Linux-x86_64.sh && \
 
 ENV PATH=$PATH:/home/tester/miniconda3/bin
 
-RUN conda install -c fragcolor nim=0.19.1
+RUN conda install -c fragcolor nim=0.19.9
 
 COPY --chown=tester ./ /home/tester/fragments
 

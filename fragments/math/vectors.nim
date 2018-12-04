@@ -1,9 +1,9 @@
-import macros, strutils, typetraits, tables
+import macros, strutils, typetraits, tables, math
 
 type
   Wide*[T; width: static[int]] = object
     ## A super-scaler primitive type, used in vectorized code
-    elements*: array[4, T]
+    elements*: array[width, T]
 
   SomeWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
@@ -35,11 +35,11 @@ template mapInlineBinary*[T: SomeWide](left, right: T, op: untyped): untyped =
     result.setLane(i, op(left.getLane(i), right.getLane(i)))
 
 template makeUniversal*(T: typedesc, op: untyped): untyped =
-  func op*[U: T](value: U): U {.noinit, inline.} =
+  proc op*[U: T](value: U): U {.noinit, inline.} =
     mapInline(value, op)
 
 template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
-  func op*[U: T](left, right: U): U {.noinit, inline.} =
+  proc op*[U: T](left, right: U): U {.noinit, inline.} =
     mapInlineBinary(left, right, op)
 
 # Mark the basic wide type as vector
@@ -58,6 +58,10 @@ makeUniversalBinary(SomeVector, `or`)
 makeUniversalBinary(SomeVector, `xor`)
 
 makeUniversal(SomeVector, abs)
+makeUniversal(SomeVector, exp)
+makeUniversal(SomeVector, tanh)
+makeUniversal(SomeVector, floor)
+makeUniversalBinary(SomeVector, pow)
 makeUniversalBinary(SomeVector, clamp)
 
 # These cannot be defined using the concept, since they would conflict with the generic version in the system module
