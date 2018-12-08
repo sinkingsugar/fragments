@@ -122,7 +122,7 @@ iterator lanes*(wide: SomeWide): SomeWide.T =
 func `[]`*(wide: Wide; index: int): Wide.T =
   wide.getLane(index)
 
-func `[]=`*(wide: Wide; index: int; value: Wide.T) =
+func `[]=`*(wide: var Wide; index: int; value: Wide.T) =
   wide.setLane(index, value)
 
 var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar: NimNode; width: int; wide: NimNode]]()
