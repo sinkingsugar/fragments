@@ -58,9 +58,10 @@ makeUniversalBinary(SomeVector, `or`)
 makeUniversalBinary(SomeVector, `xor`)
 
 makeUniversal(SomeVector, abs)
+makeUniversal(SomeVector, floor)
+makeUniversal(SomeVector, ceil)
 makeUniversal(SomeVector, exp)
 makeUniversal(SomeVector, tanh)
-makeUniversal(SomeVector, floor)
 makeUniversalBinary(SomeVector, pow)
 makeUniversalBinary(SomeVector, clamp)
 
