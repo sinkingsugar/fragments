@@ -34,3 +34,10 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
     discard gorge "rm " & outputFile
 
   return (res, 0)
+
+when isMainModule:
+  let helloWorld {.compiletime.} = buildAndRun:
+    echo "Hello World"
+  
+  static:
+    assert helloWorld.output == "Hello World"

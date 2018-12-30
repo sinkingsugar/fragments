@@ -42,3 +42,4 @@ obj/
 Obj/
 .vs/
 nimcache/
+fragments/buildandrun

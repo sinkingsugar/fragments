@@ -13,14 +13,15 @@ test:linux:
     - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/math/vectors.nim
     - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/serialization.nim
     - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/seqview.nim
+    - docker run --rm -t -u`id -u`:`id -g` fragments-test:latest nim c -r fragments/buildandrun.nim
   tags:
     - DOCKER, LINUX
     
-test:windows:
-  script:
-    - nim e build_win_ci.nims # refer to build_win_ci.nims
-  tags:
-    - NIM, WIN10
+# test:windows:
+#   script:
+#     - nim e build_win_ci.nims # refer to build_win_ci.nims
+#   tags:
+#     - NIM, WIN10
 
 test:macos:
   stage: test
@@ -41,5 +42,6 @@ test:macos:
     - nim c -r fragments/math/vectors.nim
     - nim c -r fragments/serialization.nim
     - nim c -r fragments/seqview.nim
+    - nim c -r fragments/buildandrun.nim
   tags:
     - MACOS, CONDA
