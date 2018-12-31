@@ -40,4 +40,4 @@ when isMainModule:
     echo "Hello World"
   
   static:
-    assert helloWorld.output == "Hello World"
+    assert helloWorld.output == "Hello World", helloWorld.output
