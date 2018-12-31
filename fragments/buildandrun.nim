@@ -1,4 +1,4 @@
-import macros, os
+import macros, os, strutils
 
 macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   var temp = getEnv("TMP")
@@ -24,10 +24,7 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   if errorCode != 0:
     return (text, errorCode)
 
-  when defined windows:
-    let res = gorge("cmd /C " & outputFile)
-  else:
-    let res = gorge(outputFile)
+  let res = gorge(outputFile)
 
   when defined windows:
     discard gorge "del " & checkFile
@@ -43,4 +40,4 @@ when isMainModule:
     echo "Hello World"
   
   static:
-    assert helloWorld.output == "Hello World", helloWorld.output
+    assert helloWorld.output.contains("Hello World")
