@@ -24,7 +24,10 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   if errorCode != 0:
     return (text, errorCode)
 
-  let res = gorge(outputFile)
+  when defined windows:
+    let res = gorge("cmd /C " & outputFile)
+  else:
+    let res = gorge(outputFile)
 
   when defined windows:
     discard gorge "del " & checkFile
