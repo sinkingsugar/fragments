@@ -1,4 +1,4 @@
-import macros, os
+import macros, os, strutils
 
 macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   var temp = getEnv("TMP")
@@ -34,3 +34,10 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
     discard gorge "rm " & outputFile
 
   return (res, 0)
+
+when isMainModule:
+  let helloWorld {.compiletime.} = buildAndRun:
+    echo "Hello World"
+  
+  static:
+    assert helloWorld.output.contains("Hello World")
