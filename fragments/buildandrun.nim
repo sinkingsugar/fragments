@@ -19,7 +19,12 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
   
   writeFile(checkFile, code)
 
-  let (text, errorCode) = gorgeEx("nim cpp -f -o:" & outputFile & " " & checkFile)
+  when defined vcc:
+    let (text, errorCode) = gorgeEx("nim cpp --cc:vcc -f -o:" & outputFile & " " & checkFile)
+  elif defined clang:
+    let (text, errorCode) = gorgeEx("nim cpp --cc:clang -f -o:" & outputFile & " " & checkFile)
+  else:
+    let (text, errorCode) = gorgeEx("nim cpp -f -o:" & outputFile & " " & checkFile)
 
   if errorCode != 0:
     return (text, errorCode)
