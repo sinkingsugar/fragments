@@ -1,0 +1,3 @@
+[submodule "deps/nimline"]
+	path = deps/nimline
+	url = https://github.com/fragcolor-xyz/nimline.git
