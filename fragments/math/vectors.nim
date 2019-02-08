@@ -72,7 +72,7 @@ makeUniversalBinary(Wide, max)
 func `*` *[T: SomeVector](left: T; right: T.T): T =
   restrict(left)
   for i in 0 ..< T.laneCount():
-    result.setLane(i, left.getLane(i) * right)
+    result.setLane(i, left[].getLane(i) * right)
 
 template `/` *[T: SomeVector](left: T; right: T.T): T =
   left * (T.T)1 / right
