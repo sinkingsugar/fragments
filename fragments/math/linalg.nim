@@ -624,6 +624,9 @@ func any*[width: static int](value: Vector[bool, width]): bool =
       return true
   return false
 
+converter toBool*[width: static int](value: Vector[bool, width]): bool =
+  value.all()
+
 func `not`*[width: static int](value: Vector[bool, width]): Vector[bool, width] =
   for i in 0 ..< width:
     result[i] = not value[i]
