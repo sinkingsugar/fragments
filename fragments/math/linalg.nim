@@ -55,7 +55,7 @@ type
   Matrix3x3* = Matrix[float32, 3, 3]
   Matrix4x3* = Matrix[float32, 4, 3]
   Matrix4x4* = Matrix[float32, 4, 4]
-  Matrix4x4Wide = wide Matrix4x4
+  Matrix4x4Wide* = wide Matrix4x4
 
   NonScalar*[T] = concept v, var m
     v.elements[int] is T
@@ -624,38 +624,38 @@ func any*[width: static int](value: Vector[bool, width]): bool =
       return true
   return false
 
-converter toBool*[width: static int](value: Vector[bool, width]): bool =
-  value.all()
-
-func `not`*[width: static int](value: Vector[bool, width]): Vector[bool, width] =
-  for i in 0 ..< width:
-    result[i] = not value[i]
-
-func `==`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
+func equals*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] == right[i]
 
-func `<=`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
+func `not`*[width: static int](value: Vector[bool, width]): Vector[bool, width] {.inline.} =
+  for i in 0 ..< width:
+    result[i] = not value[i]
+
+func `==`*[T; width: static int](left, right: Vector[T, width]): bool {.inline.} =
+  left.equals(right).all()
+
+func `<=`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] <= right[i]
 
-func `<`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] =
+func `<`*[T; width: static int](left, right: Vector[T, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] < right[i]
 
-func `and`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
+func `and`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] and right[i]
 
-func `or`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
+func `or`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] and right[i]
 
-func `xor`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] =
+func `xor`*[width: static int](left, right: Vector[bool, width]): Vector[bool, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = left[i] xor right[i]
 
-func select*[T; width: static int](condition: Vector[bool, width]; a, b: Vector[T, width]): Vector[T, width] =
+func select*[T; width: static int](condition: Vector[bool, width]; a, b: Vector[T, width]): Vector[T, width] {.inline.} =
   for i in 0 ..< width:
     result[i] = if condition[i]: a[i] else: b[i]
 

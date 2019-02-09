@@ -69,6 +69,10 @@ makeUniversalBinary(SomeVector, clamp)
 makeUniversalBinary(Wide, min)
 makeUniversalBinary(Wide, max)
 
+proc clamp*[T: SomeVector](self, min, max: T): T {.noinit, inline.} =
+  for i in 0 ..< T.laneCount():
+    result.setLane(i, clamp(self.getLane(i), min.getLane(i), max.getLane(i)))
+
 func `*` *[T: SomeVector](left: T; right: T.T): T =
   restrict(left)
   for i in 0 ..< T.laneCount():
