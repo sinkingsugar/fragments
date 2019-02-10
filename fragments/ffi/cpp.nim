@@ -1,2 +1,2 @@
-import ../../deps/nimline/nimline
+import ../deps/nimline/nimline
 export nimline
