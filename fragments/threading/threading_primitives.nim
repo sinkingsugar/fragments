@@ -1,5 +1,5 @@
 import cpuinfo, locks
-import atomics
+import concurrency/atomics
 
 const
   maxSpinCount = 10

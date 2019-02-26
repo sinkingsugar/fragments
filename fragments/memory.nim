@@ -16,7 +16,7 @@ proc delete*[T](p: ptr T) {.inline.} =
   dealloc(p)
 
 type
-  SharedPtr* {.importcpp: "std::shared_ptr<'0>", header: "<memory>".} [T] = object
+  SharedPtr*[T] {.importcpp: "std::shared_ptr<'0>", header: "<memory>".} = object
 
 template newShared*(T: typedesc; destructor: untyped): SharedPtr[T] =
   proc deleter(self: ptr T) =
