@@ -86,8 +86,8 @@ template `-=` *(left: var SomeVector; right: SomeVector) = left = left - right
 template `*=` *(left: var SomeVector; right: SomeVector) = left = left * right
 template `/=` *(left: var SomeVector; right: SomeVector) = left = left / right
 
-template `*=` *(left: var SomeVector; right: SomeVector.T) = left = left * right
-template `/=` *(left: var SomeVector; right: SomeVector.T) = left = left / right
+template `*=` *(left: var SomeVector; right: SomeVector.scalarType) = left = left * right
+template `/=` *(left: var SomeVector; right: SomeVector.scalarType) = left = left / right
 
 # Vectorized version of primitive types
 template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
