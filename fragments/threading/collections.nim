@@ -92,7 +92,7 @@ import threading_primitives
 type
   WorkStealingQueue* = object
     items: seq[proc()]
-    head*, tail*: Atomic[int]
+    head, tail: Atomic[int]
     foreignLock: SpinLock
 
 proc init*(self: var WorkStealingQueue) =
@@ -100,7 +100,7 @@ proc init*(self: var WorkStealingQueue) =
 
 proc enqueue*(self: var WorkStealingQueue; item: proc()) =
 
-  var currentTail = self.tail.load(moAcquire)
+  var currentTail = self.tail.load(moRelaxed)
   var mask = self.items.len - 1 # items.len is a power of 2, so `and mask` is equivalent to `mod items.len`
 
   # When the tail overflows, remap head and tail to the actual range
@@ -114,9 +114,9 @@ proc enqueue*(self: var WorkStealingQueue; item: proc()) =
 
   # If there is space (at least 2 elements worth), append.
   # This is done only by the owning thread and doesn't need to be synchronized
-  if currentTail < self.head.load(moAcquire) + mask:
+  if currentTail < self.head.load(moRelaxed) + mask:
     self.items[currentTail and mask] = item
-    self.tail.store(currentTail + 1, moRelease)
+    self.tail.store(currentTail + 1, moRelaxed)
     
   # Otherwise resize first.
   else:
@@ -201,6 +201,7 @@ proc steal*(self: var WorkStealingQueue): tuple[item: proc(); missedSteal: bool]
         let mask = self.items.len - 1
         let index = localHead and mask
         let item = self.items[index]
+        fence(moAcquire)
 
         if item == nil:
           continue
@@ -237,7 +238,7 @@ when isMainModule:
       break
     item()
 
-    let (item2, missedStreal) = queue.steal()
+    let (item2, missedSteal) = queue.steal()
     if item2 == nil:
       break
     item2()    

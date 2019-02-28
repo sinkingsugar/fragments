@@ -37,7 +37,7 @@ proc requestWorker(self: var ThreadPool) =
   var count = self.workerRequestCount.load(moRelaxed)
 
   while count < MaxThreadCount:
-    #if self.workerRequestCount.compareExchangeWeak(count, count + 1, moAcquireRelease):
+    if self.workerRequestCount.compareExchangeWeak(count, count + 1, moRelaxed):
 
       # TODO: Lock this
       if self.workers.len < MaxThreadCount:
@@ -51,27 +51,30 @@ proc requestWorker(self: var ThreadPool) =
 
       break
 
-    #count = self.workerRequestCount.load(moRelaxed)
-  
+    count = self.workerRequestCount.load(moRelaxed)
+
+
+proc markRequestSatisfied(self: var ThreadPool) =
+
+  var count = self.workerRequestCount.load(moRelaxed)
+  while count > 0 and not self.workerRequestCount.compareExchangeWeak(count, count - 1, moRelaxed):
+    count = self.workerRequestCount.load(moRelaxed)
+
 proc waitForWork(self: var ThreadPool) =
 
   self.workAvailable.waitOne()
-
-  var count = self.workerRequestCount.load(moAcquire)
-
-  # while count > 0 and not self.workerRequestCount.compareExchangeWeak(count, count - 1, moAcquireRelease):
-  #   count = self.workerRequestCount.load(moAcquire)
 
 proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
 
   threadPoolWorker = self
 
   {.gcsafe.}:
-
     while true:
       var spinWait: SpinWait
 
       while true:
+        threadPool.markRequestSatisfied()
+
         # Try to get work from this threads local queue
         var workItem = self.localWorkItems.dequeue()
 
@@ -79,16 +82,17 @@ proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
         var missedSteal = false
         if workItem == nil:
           (workItem, missedSteal) = threadPool.globalWorkItems.steal()
-          #echo cast[int](workItem.rawEnv), " ", missedSteal
-        #   #echo cast[int](addr(self.threadPool.globalWorkItems))
-
+          
         # If there is no global work either, try to steal from a random worker
-        # if workItem == nil:
-        #   let workers = threadPool.workers
-        #   let x = rand(workers.len - 1)
-        #   var index = workers.len
-        #   while index > 0:
-        #     let queue = workers[].localWorkItems
+        if workItem == nil:
+          let
+            count = threadPool.workers.len
+            offset = rand(count - 1)
+          for i in 0 ..< count:
+            # TODO: check for *any* missed steal, instead of the last?
+            (workItem, missedSteal) = threadPool.workers[(offset + i) mod count].localWorkItems.steal()
+            if workItem != nil:
+              break
 
         if workItem == nil:
           # If we missed a steal, there might be more work, so try again
@@ -134,5 +138,3 @@ when isMainModule:
         sleep(100)
 
   sleep(1000)
-  echo threadPool.globalWorkItems.head.load()
-  echo threadPool.globalWorkItems.tail.load()
