@@ -1,10 +1,10 @@
 package:
   name: fragments
-  version: "0.1.27"
+  version: "0.1.33"
 
 source:
   path: ../..
 
 requirements:
   run:
-    - nim >=0.19.9
+    - nim >=0.19.9.2
