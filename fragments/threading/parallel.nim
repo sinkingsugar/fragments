@@ -28,23 +28,23 @@ proc executeBatch(fromInclusive, toExclusive: int; action: proc(value: int)) =
 
 proc fork(endExclusive, batchSize, maxDegreeOfParallelism: int; action: proc(value: int), state: ptr State) =
 
+  # Reserve one batch to process on the current thread
+  var start = state.startInclusive.fetchAdd(batchSize, moRelaxed)
+
   # Other threads already processed all work before this one started. activeWorkerCount is already 0
-  if state.startInclusive.load(moRelaxed) >= endExclusive:
+  if start >= endExclusive:
     return
 
   #  This thread is now actively processing work items, meaning there might be work in progress
   discard state.activeWorkerCount.fetchAdd(1, moRelaxed)
 
   # Kick off another worker if there's any work left
-  if maxDegreeOfParallelism > 1 and state.startInclusive.load(moRelaxed) + batchSize < endExclusive:
+  if maxDegreeOfParallelism > 1 and start + batchSize < endExclusive:
     queueWorkItem do ():
       fork(endExclusive, batchSize, maxDegreeOfParallelism - 1, action, state)
 
   try:
     # Process batches synchronously as long as there are any
-    # TODO: Move this before the queueWorkItem?
-    var start = state.startInclusive.fetchAdd(batchSize, moRelaxed)
-
     while start < endExclusive:
       executeBatch(start, min(endExclusive, start + batchSize), action)
       start = state.startInclusive.fetchAdd(batchSize, moRelaxed)
