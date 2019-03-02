@@ -16,9 +16,11 @@ type
     workAvailable: ManualResetEvent
     spinLock: SpinLock
     workerRequestCount: Atomic[int]
+    workerCount: Atomic[int]
 
 proc init*(self: var ThreadPool) =
   self.globalWorkItems.init()
+  self.workers.setLen(MaxThreadCount)
 
 var
   threadPool: ThreadPool
@@ -26,32 +28,28 @@ var
 
 threadPool.init()
 
+proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.}
+
 proc init*(self: var ThreadPoolWorker) =
   self.localWorkItems.init()
   self.threadPool = addr threadPool
-
-proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.}
+  createThread(self.thread, processWorkItems, addr self)
 
 proc requestWorker(self: var ThreadPool) =
-  var count = self.workerRequestCount.load(moRelaxed)
 
-  while count < MaxThreadCount:
-    if self.workerRequestCount.compareExchangeWeak(count, count + 1, moRelaxed):
-
-      # TODO: Lock this
-      if self.workers.len < MaxThreadCount:
-        let worker = alloc0 ThreadPoolWorker
-        worker[].init()
-        self.workers.add(worker)
-        createThread(worker[].thread, processWorkItems, worker)
-
-      else:
-        self.workAvailable.signal()
-
+  while true:
+    # If the pool is full, wake a worker
+    var count = self.workerCount.load(moRelaxed)
+    if count >= MaxThreadCount:
+      self.workAvailable.signal()
       break
 
-    count = self.workerRequestCount.load(moRelaxed)
-
+    # Otherwise create a new worker
+    if self.workerCount.compareExchangeWeak(count, count + 1, moRelaxed):
+      let worker = alloc0 ThreadPoolWorker
+      worker[].init()
+      self.workers[count] = worker
+      break      
 
 proc markRequestSatisfied(self: var ThreadPool) =
 
@@ -85,11 +83,16 @@ proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
         # If there is no global work either, try to steal from a random worker
         if workItem == nil:
           let
-            count = threadPool.workers.len
+            count = threadPool.workerCount.load(moRelaxed)
             offset = rand(count - 1)
+
           for i in 0 ..< count:
+            let worker = threadPool.workers[(offset + i) mod count]
+            if worker == nil:
+              continue
+
             # TODO: check for *any* missed steal, instead of the last?
-            (workItem, missedSteal) = threadPool.workers[(offset + i) mod count].localWorkItems.steal()
+            (workItem, missedSteal) = worker.localWorkItems.steal()
             if workItem != nil:
               break
 
@@ -127,17 +130,18 @@ proc queueWorkItem*(workItem: proc()) =
 
 when isMainModule:
 
-  import os
-  import times
+  import os, times, math
 
   proc main() =
 
     let startTime = epochTime()
+    let maxLevel = 3
+    let childCount = 10
     var count = new Atomic[int]
 
     proc createWorkRecursive(level: int) =
       if level > 0:
-        for i in 0 ..< 10:
+        for i in 0 ..< childCount:
           closureScope:
             let n = i
             queueWorkItem do () -> void:
@@ -145,22 +149,17 @@ when isMainModule:
               # let startTime = epochTime()
               # while epochTime() - startTime < 0.02:
               #   discard
-              sleep(20)
-              discard count[].fetchAdd(1, moRelaxed)
-              #echo $level, " ", $n, " " & $getThreadId()
+              # echo $level, " ", $n, " " & $getThreadId()
 
-    createWorkRecursive(3)
+      discard count[].fetchAdd(1, moRelaxed)
+      sleep(20)
 
-    # for i in 0 ..< 10:
-    #   closureScope:
-    #     let n = i
-    #     queueWorkItem do () -> void:
-    #       echo $n & " " & $getThreadId()
-    #       sleep(100)
+    createWorkRecursive(maxLevel)
 
-    while not (count[].load(moRelaxed) == 1110):
+    let totalCount = (1 - childCount ^ (maxLevel + 1)) div (1 - childCount)
+    while not (count[].load(moRelaxed) == totalCount):
       sleep(10)
-    #echo count[].load(moRelaxed)
+
     echo epochTime() - startTime
 
   main()
