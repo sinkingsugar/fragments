@@ -26,6 +26,11 @@ type
 
   Event = ManualResetEvent | AutoResetEvent
 
+  Semaphore* = object
+    lock: Lock
+    condition: Cond
+    count: int
+
 proc isNextSpinYield*(self: SpinWait): bool {.inline.} =
   return self.count >= maxSpinCount or not allowBusyWaiting
 
@@ -80,6 +85,26 @@ proc waitOne*(self: var Event) =
       self.condition.wait(self.lock)
     when Event is AutoResetEvent:
       self.isSet = false
+
+proc init*(self: var Semaphore; initialCount: int = 0) =
+  self.count = initialCount
+  initCond(self.condition)
+  initLock(self.lock)
+
+proc destroy*(self: var Semaphore) =
+  deinitCond(self.condition)
+  deinitLock(self.lock)
+
+proc waitOne*(self: var Semaphore) =
+  withLock(self.lock):
+    while self.count <= 0:
+      self.condition.wait(self.lock)
+    dec self.count
+
+proc signal*(self: var Semaphore) =
+  withLock(self.lock):
+    inc self.count
+  signal(self.condition)
 
 when isMainModule:
   import std/threadpool

@@ -13,9 +13,8 @@ type
   ThreadPool* = object
     globalWorkItems: WorkStealingQueue
     workers: seq[ptr ThreadPoolWorker]
-    workAvailable: ManualResetEvent
     spinLock: SpinLock
-    workerRequestCount: Atomic[int]
+    workAvailable: Semaphore
     workerCount: Atomic[int]
 
 proc init*(self: var ThreadPool) =
@@ -37,14 +36,14 @@ proc init*(self: var ThreadPoolWorker) =
 
 proc requestWorker(self: var ThreadPool) =
 
+  self.workAvailable.signal()
+
+  # If the pool is not full, create a new worker
   while true:
-    # If the pool is full, wake a worker
     var count = self.workerCount.load(moRelaxed)
     if count >= MaxThreadCount:
-      self.workAvailable.signal()
       break
 
-    # Otherwise create a new worker
     if self.workerCount.compareExchangeWeak(count, count + 1, moRelaxed):
       let worker = alloc0 ThreadPoolWorker
       worker[].init()
@@ -52,14 +51,8 @@ proc requestWorker(self: var ThreadPool) =
       break      
 
 proc markRequestSatisfied(self: var ThreadPool) =
-
-  var count = self.workerRequestCount.load(moRelaxed)
-  while count > 0 and not self.workerRequestCount.compareExchangeWeak(count, count - 1, moRelaxed):
-    count = self.workerRequestCount.load(moRelaxed)
-
-proc waitForWork(self: var ThreadPool) =
-
-  self.workAvailable.waitOne()
+  discard
+  # TODO: Decrease semaphore counter
 
 proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
 
@@ -103,7 +96,7 @@ proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
 
           # Wait until more work arrives
           if spinWait.isNextSpinYield:
-            threadPool.waitForWork()
+            threadPool.workAvailable.waitOne()
             break
 
           # Wait a little, in case more work arrives
