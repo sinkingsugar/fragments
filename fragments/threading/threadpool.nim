@@ -27,9 +27,8 @@ var
 threadPool.init()
 
 proc init*(self: var ThreadPoolWorker) =
-  discard
-  #self.localWorkItems.init()
-  #self.threadPool = threadPool
+  self.localWorkItems.init()
+  self.threadPool = addr threadPool
 
 proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.}
 
@@ -129,12 +128,39 @@ proc queueWorkItem*(workItem: proc()) =
 when isMainModule:
 
   import os
+  import times
 
-  for i in 0 ..< 10:
-    closureScope:
-      let n = i
-      queueWorkItem do () -> void:
-        echo $n & " " & $getThreadId()
-        sleep(100)
+  proc main() =
 
-  sleep(1000)
+    let startTime = epochTime()
+    var count = new Atomic[int]
+
+    proc createWorkRecursive(level: int) =
+      if level > 0:
+        for i in 0 ..< 10:
+          closureScope:
+            let n = i
+            queueWorkItem do () -> void:
+              createWorkRecursive(level - 1)
+              # let startTime = epochTime()
+              # while epochTime() - startTime < 0.02:
+              #   discard
+              sleep(20)
+              discard count[].fetchAdd(1, moRelaxed)
+              #echo $level, " ", $n, " " & $getThreadId()
+
+    createWorkRecursive(3)
+
+    # for i in 0 ..< 10:
+    #   closureScope:
+    #     let n = i
+    #     queueWorkItem do () -> void:
+    #       echo $n & " " & $getThreadId()
+    #       sleep(100)
+
+    while not (count[].load(moRelaxed) == 1110):
+      sleep(10)
+    #echo count[].load(moRelaxed)
+    echo epochTime() - startTime
+
+  main()

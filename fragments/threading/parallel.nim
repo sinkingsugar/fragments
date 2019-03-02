@@ -1,5 +1,5 @@
-import cpuinfo, std/locks, algorithm
-import threadpool, locks as primitives
+import cpuinfo, locks, algorithm
+import threadpool, threading_primitives
 
 let MaxDegreeOfParallelism = countProcessors()
 
@@ -23,7 +23,7 @@ type
 proc executeBatch(fromInclusive, toExclusive: int; action: proc(value: int)) =
 # try:
 #   initialize()
-  for i in fromInclusive..<toExclusive:
+  for i in fromInclusive ..< toExclusive:
     action(i)
 # finally:
 #   finalize()
@@ -39,14 +39,16 @@ proc fork(endExclusive, batchSize, maxDegreeOfParallelism: int; action: proc(val
 
   # Kick off another worker if there's any work left
   if maxDegreeOfParallelism > 1 and state.startInclusive + batchSize < endExclusive:
-    queueWorkItem(proc() = fork(endExclusive, batchSize, maxDegreeOfParallelism - 1, action, state));
+    queueWorkItem do ():
+      fork(endExclusive, batchSize, maxDegreeOfParallelism - 1, action, state)
 
   try:
-    # rocess batches synchronously as long as there are any
-    var newStart = atomicInc(state.startInclusive, batchSize) - batchSize
-    while newStart < endExclusive:
+    # Process batches synchronously as long as there are any
+    var newStart = atomicInc(state.startInclusive, batchSize)
+
+    while newStart - batchSize < endExclusive:
       executeBatch(newStart - batchSize, min(endExclusive, newStart), action)
-      newStart = atomicInc(state.startInclusive, batchSize) - batchSize
+      newStart = atomicInc(state.startInclusive, batchSize)
 
   finally:
     # If this was the last batch, signal
@@ -76,7 +78,6 @@ proc parallelFor(fromInclusive, toExclusive: int; action: proc(value: int)) =
     # Wait for all workers to finish
     if state.activeWorkerCount != 0:
       state.finished.waitOne()
-
 
 proc parallelFor[T](collection: openArray[T]; action: proc(item: T)) {.inline.} =
   parallelFor(0, collection.len, proc(index: int) = action(collection[index]))
@@ -175,3 +176,11 @@ proc parallelSort[T](collection: var openArray[T]) =
   # Wait for all work to finish
   if (state.activeWorkerCount != 0):
     state.finished.waitOne()
+
+when isMainModule:
+
+  import os
+  import times
+
+  parallelFor(0, 100) do (i: int) -> void:
+    echo $i, " ", $getThreadId()
