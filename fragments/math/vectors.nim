@@ -130,7 +130,7 @@ func `[]`*(wide: Wide; index: int): Wide.T =
 func `[]=`*(wide: var Wide; index: int; value: Wide.T) =
   wide.setLane(index, value)
 
-func `==`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
+func `equals`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
   for i in 0 ..< SomeWide.laneCount:
     result.setLane(i, left.getLane(i) == right.getLane(i))
 
