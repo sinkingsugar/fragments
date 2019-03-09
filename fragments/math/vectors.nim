@@ -130,6 +130,40 @@ func `[]`*(wide: Wide; index: int): Wide.T =
 func `[]=`*(wide: var Wide; index: int; value: Wide.T) =
   wide.setLane(index, value)
 
+func `==`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
+  for i in 0 ..< SomeWide.laneCount:
+    result.setLane(i, left.getLane(i) == right.getLane(i))
+
+func `<=`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
+  for i in 0 ..< SomeWide.laneCount:
+    result.setLane(i, left.getLane(i) <= right.getLane(i))
+
+func `<`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
+  for i in 0 ..< SomeWide.laneCount:
+    result.setLane(i, left.getLane(i) < right.getLane(i))
+
+func `and`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
+  for i in 0 ..< laneCount:
+    result.setLane(i, left.getLane(i) and right.getLane(i))
+
+func `or`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
+  for i in 0 ..< laneCount:
+    result.setLane(i, left.getLane(i) and right.getLane(i))
+
+func `xor`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
+  for i in 0 ..< laneCount:
+    result.setLane(i, left.getLane(i) xor right.getLane(i))
+
+func `not`*[laneCount: static int](value: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
+  for i in 0 ..< laneCount:
+    result.setLane(i, not value.getLane(i))
+    
+func select*[T: SomeWide](condition: Wide#[bool, T.laneCount]#; a, b: T): T {.inline.} =
+  # TODO: Use SomeWide directly, or constraining Wide causes compiler errors
+  for i in 0 ..< T.laneCount:
+    let value = if condition.getLane(i): a.getLane(i) else: b.getLane(i)
+    result.setLane(i, value)
+
 var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar: NimNode; width: int; wide: NimNode]]()
 
 proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[NimNode]): NimNode {.compileTime.} =
@@ -301,3 +335,10 @@ when isMainModule:
   echo WideFoo.scalarType.name
   x.setLane(0, Foo())
   discard x.getLane(0)
+
+  # # Test logical ops
+  let b0 = w > v
+  let b1 = not b0
+  let wv = select(b1, w, v)
+  echo b0
+  echo wv
