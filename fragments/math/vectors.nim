@@ -73,7 +73,7 @@ proc clamp*[T: SomeVector](self, min, max: T): T {.noinit, inline.} =
   for i in 0 ..< T.laneCount():
     result.setLane(i, clamp(self.getLane(i), min.getLane(i), max.getLane(i)))
 
-func `*` *[T: SomeVector](left: T; right: T.T): T =
+func `*` *[T: SomeVector](left: T; right: T.T): T {.inline.} =
   restrict(left)
   for i in 0 ..< T.laneCount():
     result.setLane(i, left[].getLane(i) * right)
@@ -106,28 +106,28 @@ func setLane*[size: static int; S: SomeWide](wide: array[size, S]; laneIndex: in
     wide[i].setLane(laneIndex, value[i])
 
 # Common operations on vectorized types
-func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) =
+func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) {.inline.} =
   for laneIndex, value in pairs(args):
     wide.setLane(laneIndex, value)
 
-func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) =
+func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) {.inline.} =
   # var varargs is not supported
   for laneIndex, value in mpairs(args):
     value = wide.getLane(laneIndex)
 
-func broadcast*(wide: var SomeWide; value: SomeWide.T) =
+func broadcast*(wide: var SomeWide; value: SomeWide.T) {.inline.} =
   for laneIndex in 0 ..< SomeWide.width:
     wide.setLane(laneIndex, value)
 
-iterator lanes*(wide: SomeWide): SomeWide.T =
+iterator lanes*(wide: SomeWide): SomeWide.T {.inline.} =
   for laneIndex in 0..<SomeWide.width:
     yield wide.getLane(laneIndex)
 
 # Indexing of wide types
-func `[]`*(wide: Wide; index: int): Wide.T =
+func `[]`*(wide: Wide; index: int): Wide.T {.inline.} =
   wide.getLane(index)
 
-func `[]=`*(wide: var Wide; index: int; value: Wide.T) =
+func `[]=`*(wide: var Wide; index: int; value: Wide.T) {.inline.} =
   wide.setLane(index, value)
 
 func `equals`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
