@@ -143,7 +143,8 @@ proc parallelSort[T](collection: var openArray[T]; maxDegreeOfParallelism: int, 
 
         # Add a new worker if necessary
         if maxDegreeOfParallelism > 1 and not hasChild:
-          queueWorkItem(proc() = parallelSort(collection, maxDegreeOfParallelism - 1, state))
+          queueWorkItem do ():
+            parallelSort(collection, maxDegreeOfParallelism - 1, state)
           hasChild = true
 
   finally:
@@ -176,10 +177,17 @@ when isMainModule:
   import os
   import times
 
-  let startTime = epochTime()
-  
-  parallelFor(0, 100) do (i: int) -> void:
-    sleep(10)
-    echo $i, " ", $getThreadId()
+  proc main() =
 
-  echo epochTime() - startTime
+    let startTime = epochTime()
+    var count = new Atomic[int]
+    
+    parallelFor(0, 100) do (i: int):
+      sleep(10)
+      discard count[].fetchAdd(1, moRelaxed)
+      echo $i, " ", $getThreadId()
+
+    echo epochTime() - startTime
+    echo count[].load(moRelaxed)
+
+  main()

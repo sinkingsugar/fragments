@@ -81,7 +81,7 @@ proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
 
           for i in 0 ..< count:
             let worker = threadPool.workers[(offset + i) mod count]
-            if worker == nil:
+            if worker == nil or worker == self:
               continue
 
             # TODO: check for *any* missed steal, instead of the last?

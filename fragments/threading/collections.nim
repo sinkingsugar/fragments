@@ -126,11 +126,17 @@ proc enqueue*(self: var WorkStealingQueue; item: proc()) =
       let count = self.tail.load(moRelaxed) - currentHead
 
       if count >= mask:
-        self.items.setLen(self.items.len shl 1)
-        mask = self.items.len - 1
+        # Reallocate the array and make items contiguous
+        let items = self.items
+        self.items = newSeq[proc()](items.len shl 1)
+        for i in 0 ..< count:
+          self.items[i] = items[(currentHead + i) and mask]
 
-        # We could reset head tail to [0, count), but that would require rearranging the array.
-        # Alternatively we could mask them with the new mask to keep values low.
+        # Reset head and tail
+        mask = self.items.len - 1
+        currentTail = count
+        self.head.store(0, moRelaxed)
+        self.tail.store(currentTail, moRelaxed)
 
       fence(moRelease)
       self.items[currentTail and mask] = item
@@ -148,7 +154,7 @@ proc dequeue*(self: var WorkStealingQueue): proc() =
       return nil
 
     # Reserve the tail
-    localTail = self.tail.fetchSub(1, moAcquire) - 1
+    localTail = self.tail.fetchSub(1, moRelaxed) - 1
 
     # If there is still some item left, there was no
     # interaction with a steal, so take the fast path
@@ -195,7 +201,7 @@ proc steal*(self: var WorkStealingQueue): tuple[item: proc(); missedSteal: bool]
     withLock(self.foreignLock):
 
       # Reserve the head
-      let localHead = self.head.fetchAdd(1, moAcquire)
+      let localHead = self.head.fetchAdd(1, moRelaxed) - 1
 
       if localHead < self.tail.load(moRelaxed):
         let mask = self.items.len - 1
