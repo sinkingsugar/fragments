@@ -257,8 +257,8 @@ macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
 converter toVector*[T](value: (T, T)): Vector[T, 2] = (result.x, result.y) = value
 
 # 3 element tuples converters
-converter toVector*[T](value: (T, T, T)): Vector[T, 3] =
-  (result.x, result.y, result.z) = value
+converter toVector*[T](value: (T, T, T)): Vector[T, 3] = (result.x, result.y, result.z) = value
+converter toVector*[T](value: (Vector[T, 2], T)): Vector[T, 3] = (result.xy, result.z) = value
 
 # 4 element tuples converters
 converter toVector*[T](value: (T, T, T, T)): Vector[T, 4] = (result.x, result.y, result.z, result.w) = value
