@@ -276,14 +276,14 @@ func identity*[T; size: static int](_: type Matrix[T, size, size]): Matrix[T, si
   for i in 0..<size:
     result[i, i] = 1.T
 
-func fill*[T; width: static int](_: type Vector[T, width]; value: T): Vector[T, width] =
+func full*[T; width: static int](_: type Vector[T, width]; value: T): Vector[T, width] =
   for i in 0..<width:
     result[i] = value
 
 func zero*[T; width: static int](_: type Vector[T, width]): Vector[T, width] = discard
 
 func one*[T; width: static int](_: type Vector[T, width]): Vector[T, width] =
-  fill(_, 1.T)
+  full(_, 1.T)
 
 func unitX*[T](_: type Vector[T, 3]): Vector[T, 3] =
   result.x = 1.T
