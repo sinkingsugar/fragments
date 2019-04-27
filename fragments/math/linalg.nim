@@ -265,6 +265,10 @@ converter toVector*[T](value: (T, T, T, T)): Vector[T, 4] = (result.x, result.y,
 converter toVector*[T](value: (Vector[T, 2], T, T)): Vector[T, 4] = (result.xy, result.z, result.w) = value
 converter toVector*[T](value: (Vector[T, 3], T)): Vector[T, 4] = (result.xyz, result.w) = value
 
+proc to*[T1; width: static int](self: Vector[T1, width]; T2: type): Vector[T2, width] {.inline.} =
+  for i in 0 ..< width:
+    result[i] = (T2)self[i]
+
 func identity*[T](_: type QuaternionBase[T]): QuaternionBase[T] =
   result.w = 1.T
 
