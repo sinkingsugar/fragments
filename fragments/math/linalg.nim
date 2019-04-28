@@ -796,4 +796,4 @@ func contains*(box: BoundingBox; point: Vector3): bool =
   all(box.minimum <= point and box.maximum >= point)
 
 func intersects*(a, b: BoundingBox): bool =
-  all(a.maximum >= b.minimum) or all(b.maximum >= a.minimum)
+  all(a.maximum >= b.minimum) and all(b.maximum >= a.minimum)
