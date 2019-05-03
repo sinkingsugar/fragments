@@ -164,29 +164,38 @@ func select*[T: SomeWide](condition: Wide#[bool, T.laneCount]#; a, b: T): T {.in
     let value = if condition.getLane(i): a.getLane(i) else: b.getLane(i)
     result.setLane(i, value)
 
-var vectorizedTypes {.compileTime.} = newSeq[tuple[scalar: NimNode; width: int; wide: NimNode]]()
+var vectorizedTypes {.compileTime.}: seq[tuple[scalar: NimNode; width: int; wide: NimNode]]
 
-proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[NimNode]): NimNode {.compileTime.} =
+type
+  WideBuilderContext = object
+    generatedTypes: seq[NimNode]
+    generatedProcs: seq[NimNode]
   
-  case T.typeKind:
-    of ntyTypeDesc:
-      return makeWideTypeRecursive(T.getTypeInst[1], generatedTypes, generatedProcs)
+proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.}
       
-    of ntyArray:
-      # Array types are a bracket expression of 'array', a range, and the element type
-      var wideType = T.getTypeInst.copyNimTree()     
-      var elementType = wideType[2]
-      wideType[2] = makeWideTypeRecursive(elementType, generatedTypes, generatedProcs)
-      return wideType
+proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.} =
 
-    of ntyObject:
-      case T.kind:
-        of nnkSym:
-          for vectorizedType in vectorizedTypes:
-            if T.sameType(vectorizedType.scalar) and
-              vectorizedType.width == 4:
-            #if T == vectorizedType.scalar:
-              return vectorizedType.wide
+  var
+    scalarTypeName: NimNode
+    scalarImpl: NimNode
+
+  # For a typedef, we refer to the scalarType with it's symbol. We also take it's implementation from the typedef.
+  # This is the case for generic type instantiations.
+  if T.kind == nnkTypeDef:
+    scalarTypeName = T[0]
+    scalarImpl = T[2]
+
+  # Otherwise, T might be a symbol or another simple type expression. We refer to it using this expression.
+  # We get a nnkObjectType/etc. with getTypeImpl()
+  else:
+    scalarTypeName = T
+    scalarImpl = T.getTypeImpl()
+  
+  # TODO: Handle refs, base types, etc.
+  scalarImpl.expectKind({ nnkObjectTy, nnkTupleTy })
+  var fields = scalarImpl
+  if scalarImpl.kind == nnkObjectTy:
+    fields = scalarImpl[2]
 
           var
             recList = nnkRecList.newTree(newEmptyNode(), newEmptyNode())
@@ -197,10 +206,8 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
             resultSym = ident("result")
             valueSym = ident("value")
 
-          let scalarTypeDefinition = T.getImpl()
-
           # Iterate field declarations of the scalar type
-          for fieldDefs in scalarTypeDefinition[2][2]:
+  for fieldDefs in fields:
             fieldDefs.expectKind(nnkIdentDefs)
             fieldDefs.expectMinLen(2)
 
@@ -210,15 +217,30 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
 
               # Create a copy of each field declaration
               let fieldDef = fieldDefs[i]
-              fieldDef.expectKind({nnkIdent, nnkPragmaExpr, nnkPostfix})
-              newFieldDefs.add(fieldDef.copyNimTree())
 
-              # Get the field identifier
-              var fieldIdent = fieldDef
-              if fieldIdent.kind == nnkPragmaExpr:
-                fieldIdent = fieldIdent[0]
-              if fieldIdent.kind == nnkPostfix:
-                fieldIdent = fieldIdent[1]
+      proc copyFieldDef(node: NimNode): tuple[root, ident: NimNode] =
+        fieldDef.expectKind({nnkIdent, nnkSym, nnkPragmaExpr, nnkPostfix})
+        case node.kind:
+          of nnkIdent:
+            return (node, node)
+          of nnkSym:
+            let ident = ident($node)
+            return (ident, ident)
+          of nnkPostfix:
+            result.root = node.copy()
+            let (root, ident) = result.root[1].copyFieldDef()
+            result.root[1] = root
+            result.ident = ident
+          of nnkPragmaExpr:
+            result.root = node.copy()
+            let (root, ident) = result.root[0].copyFieldDef()
+            result.root[0] = root
+            result.ident = ident
+          else: discard
+
+      let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
+
+      newFieldDefs.add(newFieldDef)
 
               # Generate a lane getter and setter for each field
               getters.add(quote do: `resultSym`.`fieldIdent` = `selfSym`.`fieldIdent`.getLane(`laneIndexSym`))
@@ -226,7 +248,7 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
 
             # Vectorize the field type
             let fieldType = fieldDefs[^2]
-            let newFieldType = makeWideTypeRecursive(fieldType, generatedTypes, generatedProcs)
+    let newFieldType = context.makeWideTypeRecursive(fieldType)
             newFieldDefs.add(newFieldType)
 
             newFieldDefs.add(newEmptyNode())
@@ -237,18 +259,18 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
           # Create a new symbol for the type and add it to the list
           # of known vectorized types
           var symbol = genSym(nskType)
-          vectorizedTypes.add((T, 4, symbol))
+  vectorizedTypes.add((scalarTypeName, 4, symbol))
 
           # Satisfy the SomeWide concept and generate lane accessors
-          generatedProcs.add(quote do:
-            template scalarType*(t: type `symbol`): typedesc = `T`
+  context.generatedProcs.add(quote do:
+    template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
             template laneCount*(t: type `symbol`): int = 4
-            func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `T` {.inline.} = `getters`
-            func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `T`) {.inline.} = `setters`
+    func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
+    func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
           )
 
           # Create the definition of the vectorized type
-          generatedTypes.add(nnkTypeDef.newTree(
+  context.generatedTypes.add(nnkTypeDef.newTree(
             symbol,
             newEmptyNode(),
             nnkObjectTy.newTree(
@@ -260,8 +282,43 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
           
           return symbol
 
-        else: discard
+proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.} =
+
+  for vectorizedType in vectorizedTypes:
+    if T.sameType(vectorizedType.scalar) and
+      vectorizedType.width == 4:
+    #if T == vectorizedType.scalar:
+      return vectorizedType.wide
+
+  var genericParams: seq[(NimNode, NimNode)]
+
+  case T.typeKind:
+    of ntyTypeDesc:
+      # A typedesc is a backet expression, wrapping another type
+      return context.makeWideTypeRecursive(T[1])
+
+    of ntyGenericInvocation:
+      # Generic invocations are bracket expressions. We vectorize the generic type and return a matching invocation of it.
+      # We pass the full nnkTypeDef, so we can replace the generic params.
+      result = T.copyNimTree()
+      let scalarTypeDef = T[0].getImpl()
+      let wideTypeSym = context.makeWideComplexType(scalarTypeDef)
+      result[0] = wideTypeSym
+      
+    of ntyArray:
+      # Array types are a bracket expression of 'array', a range, and the element type
+      # We simply vectorize the element type
+      #T.expectKind(nnkBracketExpr)
+      result = T.getTypeInst.copyNimTree()     
+      var elementType = result[2]
+      result[2] = context.makeWideTypeRecursive(elementType)
+
+    of ntyGenericInst, ntyObject, ntyTuple:
+      # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
+      return context.makeWideComplexType(T)
    
+    # TODO: Should distinct introspect object types? Should it handle trivial types differently?
+    #of ntyDistinct, ntyEnum, ntyFloat, ...:
     else:
       let
         name = ident($T)
@@ -272,17 +329,17 @@ proc makeWideTypeRecursive(T: NimNode; generatedTypes, generatedProcs: var seq[N
         #array[4, `T`]
 
 proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
-  var generatedTypes = newSeq[NimNode]()
-  var generatedProcs = newSeq[NimNode]()
-  let rootType = makeWideTypeRecursive(T, generatedTypes, generatedProcs)
+  var context: WideBuilderContext
+  let rootType = context.makeWideTypeRecursive(T)
 
-  result = newStmtList(nnkTypeSection.newTree(generatedTypes))
-  result.add(generatedProcs)
+  result = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
+  result.add(context.generatedProcs)
   result.add(rootType)
+  echo repr result
 
 macro wide*(T: typedesc): untyped =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
-  T.getType().makeWideTypeImpl()
+  T.getTypeInst().makeWideTypeImpl()
 
 when isMainModule:
   # Test super scalar concept
