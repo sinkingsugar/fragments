@@ -5,10 +5,10 @@ type
     ## A super-scaler primitive type, used in vectorized code
     elements*: array[width, T]
 
-  SomeWide* = concept v, var m, type V
+  SomeWide*[T; width: static int] = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    type T = V.scalarType
-    const width: int = V.laneCount
+    V.scalarType is T
+    V.laneCount == width
     v.getLane(int) is T
     m.setLane(int, T)
     
@@ -23,24 +23,15 @@ template restrict*(arg: untyped): untyped =
     let `arg` {.inject, codegenDecl: "$# __restrict__ $#".} = unsafeaddr `arg`
 
 # Helpers for mapping scalar operations to wide types
-template mapInline*[T: SomeWide](value: T, op: untyped): untyped =
-  restrict(value)
-  for i in 0 ..< T.laneCount():
-    result.setLane(i, op(value.getLane(i)))
-
-template mapInlineBinary*[T: SomeWide](left, right: T, op: untyped): untyped =
-  restrict(left)
-  restrict(right)
-  for i in 0 ..< T.laneCount():
-    result.setLane(i, op(left.getLane(i), right.getLane(i)))
-
 template makeUniversal*(T: typedesc, op: untyped): untyped =
-  proc op*[U: T](value: U): U {.noinit, inline.} =
-    mapInline(value, op)
+  proc `op`*[U: T](value: U): U {.inline.} =
+    for i in 0 ..< U.laneCount:
+      result.setLane(i, `op`(value.getLane(i)))
 
 template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
-  proc op*[U: T](left, right: U): U {.noinit, inline.} =
-    mapInlineBinary(left, right, op)
+  proc `op`*[U: T](left, right: U): U {.inline.} =
+    for i in 0 ..< U.laneCount:
+      result.setLane(i, `op`(left.getLane(i), right.getLane(i)))
 
 # Mark the basic wide type as vector
 template isVector*(_: type Wide): bool = true
@@ -92,16 +83,16 @@ template `/=` *(left: var SomeVector; right: SomeVector.scalarType) = left = lef
 # Vectorized version of primitive types
 template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
 template laneCount*[T; width: static int](t: type Wide[T, width]): int = width
-func getLane*(wide: Wide; laneIndex: int): Wide.T {.inline.} = wide.elements[laneIndex]
-func setLane*(wide: var Wide; laneIndex: int; value: Wide.T) {.inline.} = wide.elements[laneIndex] = value
+template getLane*[T; width: static int](wide: Wide[T, width]; index: int): T = wide.elements[index]
+template setLane*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) = wide.elements[index] = value
 
 # Vectorized version of arrays
 template scalarType*[size: static int](t: type array[size, SomeWide]): typedesc = array[size, SomeWide.T]
 template laneCount*[size: static int](t: type array[size, SomeWide]): int = SomeWide.width
-func getLane*[size: static int; S: SomeWide](wide: array[size, S]; laneIndex: int): array[size, S.T] {.inline.} =
+func getLane*[size: static int](wide: array[size, SomeWide]; laneIndex: int): array[size, SomeWide.T] {.inline.} =
   for i in 0..<size:
     result[i] = wide[i].getLane(laneIndex)
-func setLane*[size: static int; S: SomeWide](wide: array[size, S]; laneIndex: int, value: array[size, S.T]) {.inline.} =
+func setLane*[size: static int](wide: var array[size, SomeWide]; laneIndex: int, value: array[size, SomeWide.T]) {.inline.} =
   for i in 0..<size:
     wide[i].setLane(laneIndex, value[i])
 
@@ -116,21 +107,21 @@ func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) {.inline.} =
     value = wide.getLane(laneIndex)
 
 func broadcast*(wide: var SomeWide; value: SomeWide.T) {.inline.} =
-  for laneIndex in 0 ..< SomeWide.width:
+  for laneIndex in 0 ..< SomeWide.laneCount:
     wide.setLane(laneIndex, value)
 
 iterator lanes*(wide: SomeWide): SomeWide.T {.inline.} =
-  for laneIndex in 0..<SomeWide.width:
+  for laneIndex in 0..<SomeWide.laneCount:
     yield wide.getLane(laneIndex)
 
 # Indexing of wide types
-func `[]`*(wide: Wide; index: int): Wide.T {.inline.} =
-  wide.getLane(index)
+template `[]`*[T; width: static int](wide: Wide[T, width]; index: int): T =
+  wide.elements[index]
 
-func `[]=`*(wide: var Wide; index: int; value: Wide.T) {.inline.} =
-  wide.setLane(index, value)
+template `[]=`*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) =
+  wide.elements[index] = value
 
-func `equals`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
+func equals*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
   for i in 0 ..< SomeWide.laneCount:
     result.setLane(i, left.getLane(i) == right.getLane(i))
 
@@ -158,11 +149,13 @@ func `not`*[laneCount: static int](value: Wide[bool, laneCount]): Wide[bool, lan
   for i in 0 ..< laneCount:
     result.setLane(i, not value.getLane(i))
     
-func select*[T: SomeWide](condition: Wide#[bool, T.laneCount]#; a, b: T): T {.inline.} =
-  # TODO: Use SomeWide directly, or constraining Wide causes compiler errors
-  for i in 0 ..< T.laneCount:
+func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[T, width]): SomeWide[T, width] {.inline.} =
+  #staticFor(i, T.laneCount):
+  var r: type(a)
+  for i in 0 ..< width:
     let value = if condition.getLane(i): a.getLane(i) else: b.getLane(i)
-    result.setLane(i, value)
+    r.setLane(i, value) # TODO: Why does this not work directly on result?
+  return r
 
 var vectorizedTypes {.compileTime.}: seq[tuple[scalar: NimNode; width: int; wide: NimNode]]
 
@@ -404,12 +397,15 @@ when isMainModule:
       #tValue*: Time
       #sValue*: string
       rValue*: Bar
+      aValue: array[2, Bar]
 
     WideBar = wide Bar
 
     WideFoo = wide Foo
 
   echo type(WideFoo.fvalue).name
+  assert (wide float) is SomeWide
+  assert (wide float) is SomeWide[float, 4]
 
   # Test type reuse
   var x: WideFoo
