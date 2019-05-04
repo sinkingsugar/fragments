@@ -164,6 +164,7 @@ type
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
     symbolMap: seq[(NimNode, NimNode)]
+    isLocal: bool
 
 func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
   if node.kind == nnkSym:
@@ -278,6 +279,15 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
   var symbol = genSym(nskType, scalarTypeName.repr & "_Wide")
   vectorizedTypes.add((scalarTypeName, 4, symbol))
 
+  if context.isLocal:
+    context.generatedProcs.add(quote do:
+      template scalarType(t: type `symbol`): typedesc = `scalarTypeName`
+      template laneCount(t: type `symbol`): int = 4
+      func getLane(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
+      func setLane(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
+      template isVector(_: type `symbol`): bool = `scalarTypeName` is SomeVector
+    )
+  else:
   context.generatedProcs.add(quote do:
     template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
     template laneCount*(t: type `symbol`): int = 4
@@ -344,7 +354,19 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode
         #array[4, `T`]
 
 proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
+  
   var context: WideBuilderContext
+
+  # Check the ancestor of the typedesc. If we are inside some proc we can't export any
+  # generated symbols.
+  var owner = T[0].owner
+  while owner.kind == nnkSym:
+    #echo astgenrepr owner, owner.symKind
+    if owner.symKind in { nskProc, nskFunc, nskMethod, nskIterator, nskConverter }:
+      context.isLocal = true
+      break
+    owner = owner.owner
+  
   let rootType = context.makeWideTypeRecursive(T)
 
   result = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
