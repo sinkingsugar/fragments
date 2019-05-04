@@ -290,6 +290,7 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
     template laneCount*(t: type `symbol`): int = 4
     func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
     func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
+    template isVector*(_: type `symbol`): bool = `scalarTypeName` is SomeVector
   )
   
   # Create the definition of the vectorized type

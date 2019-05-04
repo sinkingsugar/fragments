@@ -708,6 +708,12 @@ when isMainModule:
   echo q
   echo q.toMatrix().toQuaternion()
 
+  block:
+    assert Vector3Wide is SomeWide
+    assert Vector3Wide is SomeVector
+    var a, b: Vector3Wide
+    echo a + b
+
 type
   Color3* = distinct Vector3
 
