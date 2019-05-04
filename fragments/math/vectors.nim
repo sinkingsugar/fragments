@@ -353,13 +353,15 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode
         #Wide[`T`]
         #array[4, `T`]
 
-proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
+macro wide*(T: typedesc): untyped =
+  ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   
+  let typeDesc = T.getTypeInst()
   var context: WideBuilderContext
 
   # Check the ancestor of the typedesc. If we are inside some proc we can't export any
   # generated symbols.
-  var owner = T[0].owner
+  var owner = typeDesc[0].owner
   while owner.kind == nnkSym:
     #echo astgenrepr owner, owner.symKind
     if owner.symKind in { nskProc, nskFunc, nskMethod, nskIterator, nskConverter }:
@@ -367,15 +369,11 @@ proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
       break
     owner = owner.owner
   
-  let rootType = context.makeWideTypeRecursive(T)
+  let rootType = context.makeWideTypeRecursive(typeDesc)
 
   result = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
   result.add(context.generatedProcs)
   result.add(rootType)
-
-macro wide*(T: typedesc): untyped =
-  ## Create a vectorized version of a type, used to convert code to structure-of-array form.
-  T.getTypeInst().makeWideTypeImpl()
 
 when isMainModule:
   # Test super scalar concept
