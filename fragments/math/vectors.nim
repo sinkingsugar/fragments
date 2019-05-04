@@ -191,13 +191,10 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
     scalarTypeName = T[0]
     scalarImpl = T[2]
 
-    #echo astGenRepr T
-    #wideGenericParams = T[1].copyNimTree()
     if T[1].kind != nnkEmpty:
       wideGenericParams = nnkGenericParams.newTree()
       for scalarParam in T[1]:
         scalarParam.expectKind(nnkSym) # TODO: Why is this not nnkIdentDefs?
-        #echo astgenrepr scalarParam.gettype.typekind
         let t = quote do:
           type(`scalarParam`)
         let wideParam = genSym(nskGenericParam, scalarParam.repr)
@@ -281,10 +278,6 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
   var symbol = genSym(nskType, scalarTypeName.repr & "_Wide")
   vectorizedTypes.add((scalarTypeName, 4, symbol))
 
-  # Satisfy the SomeWide concept and generate lane accessors
-  # if scalarTypeName.kind == nnkSym:
-  #   echo repr scalarTypeName.owner
-
   context.generatedProcs.add(quote do:
     template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
     template laneCount*(t: type `symbol`): int = 4
@@ -357,7 +350,6 @@ proc makeWideTypeImpl(T: NimNode): NimNode {.compileTime.} =
   result = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
   result.add(context.generatedProcs)
   result.add(rootType)
-  echo repr result
 
 macro wide*(T: typedesc): untyped =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
