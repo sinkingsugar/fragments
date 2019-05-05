@@ -177,6 +177,26 @@ func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
 
   return node
 
+proc copyFieldDef(node: NimNode): tuple[root, ident: NimNode] =
+  node.expectKind({nnkIdent, nnkSym, nnkPragmaExpr, nnkPostfix})
+  case node.kind:
+    of nnkIdent:
+      return (node, node)
+    of nnkSym:
+      let ident = ident($node)
+      return (ident, ident)
+    of nnkPostfix:
+      result.root = node.copy()
+      let (root, ident) = result.root[1].copyFieldDef()
+      result.root[1] = root
+      result.ident = ident
+    of nnkPragmaExpr:
+      result.root = node.copy()
+      let (root, ident) = result.root[0].copyFieldDef()
+      result.root[0] = root
+      result.ident = ident
+    else: discard
+
 proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.}
 
 proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.} =
@@ -235,27 +255,6 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
 
       # Create a copy of each field declaration
       let fieldDef = fieldDefs[i]
-
-      proc copyFieldDef(node: NimNode): tuple[root, ident: NimNode] =
-        fieldDef.expectKind({nnkIdent, nnkSym, nnkPragmaExpr, nnkPostfix})
-        case node.kind:
-          of nnkIdent:
-            return (node, node)
-          of nnkSym:
-            let ident = ident($node)
-            return (ident, ident)
-          of nnkPostfix:
-            result.root = node.copy()
-            let (root, ident) = result.root[1].copyFieldDef()
-            result.root[1] = root
-            result.ident = ident
-          of nnkPragmaExpr:
-            result.root = node.copy()
-            let (root, ident) = result.root[0].copyFieldDef()
-            result.root[0] = root
-            result.ident = ident
-          else: discard
-
       let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
 
       newFieldDefs.add(newFieldDef)
