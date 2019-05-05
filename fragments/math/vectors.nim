@@ -22,15 +22,27 @@ template restrict*(arg: untyped): untyped =
   else:
     let `arg` {.inject, codegenDecl: "$# __restrict__ $#".} = unsafeaddr `arg`
 
+macro staticFor*(name: untyped; count: static int; body: untyped): untyped =
+  result = newStmtList()
+  for i in 0 ..< count:
+    result.add quote do:
+      block:
+        const `name` = `i`
+        `body`
+  
+  # return quote do:
+  #   for `name` in 0 ..< `count`:
+  #     `body`
+
 # Helpers for mapping scalar operations to wide types
 template makeUniversal*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](value: U): U {.inline.} =
-    for i in 0 ..< U.laneCount:
+    staticFor(i, U.laneCount):
       result.setLane(i, `op`(value.getLane(i)))
 
 template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](left, right: U): U {.inline.} =
-    for i in 0 ..< U.laneCount:
+    staticFor(i, U.laneCount):
       result.setLane(i, `op`(left.getLane(i), right.getLane(i)))
 
 # Mark the basic wide type as vector
@@ -61,12 +73,12 @@ makeUniversalBinary(Wide, min)
 makeUniversalBinary(Wide, max)
 
 proc clamp*[T: SomeVector](self, min, max: T): T {.noinit, inline.} =
-  for i in 0 ..< T.laneCount():
+  staticFor(i, T.laneCount):
     result.setLane(i, clamp(self.getLane(i), min.getLane(i), max.getLane(i)))
 
 func `*` *[T: SomeVector](left: T; right: T.T): T {.inline.} =
   restrict(left)
-  for i in 0 ..< T.laneCount():
+  staticFor(i, T.laneCount):
     result.setLane(i, left[].getLane(i) * right)
 
 template `/` *[T: SomeVector](left: T; right: T.T): T =
@@ -97,9 +109,9 @@ func setLane*[size: static int](wide: var array[size, SomeWide]; laneIndex: int,
     wide[i].setLane(laneIndex, value[i])
 
 # Common operations on vectorized types
-func gather*(wide: var SomeWide; args: varargs[SomeWide.T]) {.inline.} =
-  for laneIndex, value in pairs(args):
-    wide.setLane(laneIndex, value)
+func gather*[T; width: static int](self: var SomeWide[T, width]; args: varargs[T]) {.inline.} =
+  for i, value in pairs(args):
+    self.setLane(i, value)
 
 func scatter*(wide: SomeWide; args: var openarray[SomeWide.T]) {.inline.} =
   # var varargs is not supported
@@ -122,37 +134,45 @@ template `[]=`*[T; width: static int](wide: var Wide[T, width]; index: int; valu
   wide.elements[index] = value
 
 func equals*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  for i in 0 ..< SomeWide.laneCount:
+  staticFor(i, SomeWide.laneCount):
     result.setLane(i, left.getLane(i) == right.getLane(i))
 
 func `<=`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  for i in 0 ..< SomeWide.laneCount:
+  staticFor(i, SomeWide.laneCount):
     result.setLane(i, left.getLane(i) <= right.getLane(i))
 
 func `<`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  for i in 0 ..< SomeWide.laneCount:
+  staticFor(i, SomeWide.laneCount):
     result.setLane(i, left.getLane(i) < right.getLane(i))
 
-func `and`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
-  for i in 0 ..< laneCount:
+func `and`*[T: bool | SomeInteger, laneCount: static int](left, right: Wide[T, laneCount]): Wide[T, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) and right.getLane(i))
 
-func `or`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
-  for i in 0 ..< laneCount:
+func `or`*[T: bool | SomeInteger, laneCount: static int](left, right: Wide[T, laneCount]): Wide[T, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) and right.getLane(i))
 
-func `xor`*[laneCount: static int](left, right: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
-  for i in 0 ..< laneCount:
+func `xor`*[T: bool | SomeInteger, laneCount: static int](left, right: Wide[T, laneCount]): Wide[T, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) xor right.getLane(i))
 
-func `not`*[laneCount: static int](value: Wide[bool, laneCount]): Wide[bool, laneCount] {.inline.} =
-  for i in 0 ..< laneCount:
+func `not`*[T: bool | SomeInteger, laneCount: static int](value: Wide[T, laneCount]): Wide[T, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, not value.getLane(i))
     
-func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[T, width]): SomeWide[T, width] {.inline.} =
-  #staticFor(i, T.laneCount):
+func select*[T; width: static int](mask: Wide[SomeInteger, width]; a, b: SomeWide[T, width]): SomeWide[T, width] {.inline.} =
+  static: assert sizeof(SomeInteger) == sizeof(T)
+
   var r: type(a)
-  for i in 0 ..< width:
+  staticFor(i, width):
+    let value = (mask[i] and cast[SomeInteger](a.getLane(i))) or (not mask[i] and cast[SomeInteger](b.getLane(i)))
+    r.setLane(i, cast[T](value)) # TODO: Why does this not work directly on result?
+  return r
+
+func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[T, width]): SomeWide[T, width] {.inline.} =
+  var r: type(a)
+  staticFor(i, width):
     let value = if condition.getLane(i): a.getLane(i) else: b.getLane(i)
     r.setLane(i, value) # TODO: Why does this not work directly on result?
   return r
