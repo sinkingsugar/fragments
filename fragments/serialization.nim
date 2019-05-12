@@ -1,7 +1,5 @@
 import macros, streams, math.math_common, options, tables
 
-{.experimental.}
-
 const
   highBit = 0b1000_0000
   mask = 0b0111_1111
@@ -96,13 +94,13 @@ proc toFourCC*(str: string): FourCC {.compileTime.} =
   doAssert(str.len == 4, "To make a FourCC from a string the string needs to be exactly 4 chars long")
   return toFourCC(str[0], str[1], str[2], str[3])
 
-proc newSerializationContext*(stream: Stream): SerializationContext =
+proc newSerializationContext*(stream: Stream): owned SerializationContext =
   new(result)
   result.stream = stream
   result.references = @[]
   result.ids = initTable[pointer, int]()
 
-var serializableTypes {.compileTime.} = newSeq[tuple[serializable, serialize, deserialize: NimNode]]()
+var serializableTypes {.compileTime.}: seq[tuple[serializable, serialize, deserialize: NimNode]]
 
 proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deserialize: NimNode] {.compileTime.} =
   let typeInst = t.getTypeInst()
@@ -232,14 +230,24 @@ proc getRefId*(self: SerializationContext; reference: ref): Option[int] =
   let id = self.ids.getOrDefault(cast[pointer](reference), -1)
   return if id < 0: int.none else: id.some
 
-proc registerRef*(self: SerializationContext; reference: ref) =
+proc registerRef*[T](self: SerializationContext; reference: ref T) =
   let id = self.references.len
   let key = cast[pointer](reference)
   self.references.add(key)
   self.ids[key] = id
 
+proc registerOwnedRef*[T](self: SerializationContext; reference: owned(ref T)): ref T =
+  let id = self.references.len
+  let key = cast[pointer](reference)
+  self.references.add(key)
+  self.ids[key] = id
+  return cast[ref T](key)
+
 proc getRefFromId*[T](self: SerializationContext; id: int): ref T =
   cast[ref T](self.references[id])
+
+proc getOwnedRefFromId*[T](self: SerializationContext; id: int): owned (ref T) =
+  move cast[ptr owned(ref T)](addr self.references[id])[]
 
 # Refs
 proc serializeValue*[T](value: ref T; context: SerializationContext) =
@@ -261,7 +269,7 @@ proc serializeValue*[T](value: ref T; context: SerializationContext) =
       else:
         serialize(value[], context)     
 
-proc deserializeValue*[T](value: var ref T; context: SerializationContext) =
+proc deserializeValue*[T](value: var owned(ref T); context: SerializationContext) =
   let kind = context.stream.readInt8().ReferenceSerializationKind
   case kind:
     of ReferenceSerializationKind.Nil:
@@ -269,15 +277,37 @@ proc deserializeValue*[T](value: var ref T; context: SerializationContext) =
 
     of ReferenceSerializationKind.Reference:
       let id = context.stream.readInt64()
-      value = getRefFromId[T](context, id.int)
+      value = getOwnedRefFromId[T](context, id.int)
+
+      # TODO: Keep track which references are actually owned, and allow getOwnedRefFromId only once.
+      # When serializing, registered references can never be owned, because deserializing could violate ownership.
 
     of ReferenceSerializationKind.Value:
-      when Serializable is Inheritable:
-        discard
+      when value is Inheritable:
+        raiseAssert "Not implemented"
       else:
         new(value)
         context.registerRef(value)
         deserialize(value[], context)  
+
+when defined nimV2:
+  proc deserializeValue*[T](value: var ref T; context: SerializationContext) =
+    let kind = context.stream.readInt8().ReferenceSerializationKind
+    case kind:
+      of ReferenceSerializationKind.Nil:
+        value = nil
+
+      of ReferenceSerializationKind.Reference:
+        let id = context.stream.readInt64()
+        value = getRefFromId[T](context, id.int)
+
+      of ReferenceSerializationKind.Value:
+        when value is Inheritable:
+          raiseAssert "Not implemented"
+        else:
+          let reference = new T
+          value = context.registerOwnedRef(reference)
+          deserialize(value[], context)  
 
 # Blittable
 proc serializeValue*(value: Blittable; context: SerializationContext) =
@@ -320,7 +350,7 @@ proc deserializeValue*(value: var string; context: SerializationContext) =
 
 when isMainModule:
   type
-    Distint = distinct int
+    Distinct = distinct int
     NonBlittable = object
       f: ref int
 
@@ -332,11 +362,11 @@ when isMainModule:
   assert float is Serializable
   assert string is Serializable
   assert Ref is Serializable
-  assert Ptr is Serializable
+  assert Ptr isnot Serializable
   assert Seq is Serializable
 
   assert float is Blittable
-  static: assert Distint.isBlittable # TODO: concept causes SIGSEGV?
+  static: assert Distinct.isBlittable # TODO: concept causes SIGSEGV?
   assert Tuple isnot Blittable
   assert NonBlittable isnot Blittable
   assert string isnot Blittable
@@ -381,35 +411,41 @@ when isMainModule:
     Test3 = tuple
       a: int
 
-    Test = ref object
+    Test = ref TestObj
+    TestObj = object
       a1*, a2* {.serializable: false.}: float
       b*: seq[int]
       s*: string
       r*: Test2
-      p*: ref float
+      p*: owned (ref float)
+      p2*: (ref float)
       t1*: Test3
       t2*: tuple[a: int]
-      t3*: tuple[a: ref float]
+      # t3*: tuple[a: owned (ref float)]
+
+  assert Test is Serializable
 
   var
-    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,), t3: (new float,))
-    r2 = Test()
+    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))#, t3: (new float,))
+    r2: owned Test
   r1.p[] = 3.0
-  r1.t3.a[] = 4.0
+  r1.p2 = r1.p
+  #r1.t3.a[] = 4.0
 
   var context = newSerializationContext(stream)
-  context.stream = stream
   stream.setPosition(0)
   serialize(r1, context)
 
-  context.stream = stream  
+  context = newSerializationContext(stream)
   stream.setPosition(0)
   deserialize(r2, context)
-
+  
   r1.a2 = 0
 
-  echo r1
-  echo r2  
+  echo r1[]
+  echo r2[]
 
-  assert $r1 == $r2
+  assert $r1[] == $r2[]
+  assert $r1.p[] == $r2.p[]
+  #assert r2.p == r2.p2
 
