@@ -302,8 +302,8 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
     context.generatedProcs.add(quote do:
       template scalarType(t: type `symbol`): typedesc = `scalarTypeName`
       template laneCount(t: type `symbol`): int = 4
-      func getLane(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
-      func setLane(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
+      func getLane(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline, used.} = `getters`
+      func setLane(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline, used.} = `setters`
       template isVector(_: type `symbol`): bool = `scalarTypeName` is SomeVector
     )
   else:
