@@ -619,6 +619,10 @@ func lookAt*[T: SomeFloat](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
   result.m32 = -dot(zAxis, eye)
   result.m33 = 1.T
 
+func abs*(self: Matrix): Matrix =
+  for i in 0 ..< self.elements.len:
+    result[i] = abs(self[i])
+
 func all*[width: static int](value: Vector[bool, width]): bool =
   for element in value.elements:
     if not element:
