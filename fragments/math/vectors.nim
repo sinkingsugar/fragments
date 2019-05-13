@@ -307,13 +307,13 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
       template isVector(_: type `symbol`): bool = `scalarTypeName` is SomeVector
     )
   else:
-  context.generatedProcs.add(quote do:
-    template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
-    template laneCount*(t: type `symbol`): int = 4
-    func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
-    func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
-    template isVector*(_: type `symbol`): bool = `scalarTypeName` is SomeVector
-  )
+    context.generatedProcs.add(quote do:
+      template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
+      template laneCount*(t: type `symbol`): int = 4
+      func getLane*(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
+      func setLane*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
+      template isVector*(_: type `symbol`): bool = `scalarTypeName` is SomeVector
+    )
   
   # Create the definition of the vectorized type
   context.generatedTypes.add(nnkTypeDef.newTree(
@@ -334,6 +334,7 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode
     if T.sameType(vectorizedType.scalar) and
       vectorizedType.width == 4:
     #if T == vectorizedType.scalar:
+      #echo "Reused type: " & (repr vectorizedType.scalar) & " --> " & (repr vectorizedType.wide)
       return vectorizedType.wide
 
   case T.typeKind:
@@ -393,6 +394,7 @@ macro wide*(T: typedesc): untyped =
   result = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
   result.add(context.generatedProcs)
   result.add(rootType)
+  #echo repr result
 
 when isMainModule:
   # Test super scalar concept
