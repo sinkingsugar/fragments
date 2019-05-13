@@ -1,40 +1,43 @@
 import locks, cpuinfo, random, concurrency/atomics
 import threading_primitives, collections, ../memory
 
+when not defined nimV2:
+  {.error: "Legacy run-time is not supported".}
+
 var 
   MaxThreadCount = countProcessors() + 2
 
 type
-  ThreadPoolWorker = object
+  ThreadPoolWorker = ref object
     localWorkItems: WorkStealingQueue
-    threadPool: ptr ThreadPool
-    thread: Thread[ptr ThreadPoolWorker]
+    threadPool: ThreadPool
+    thread: Thread[ThreadPoolWorker]
 
-  ThreadPool* = object
+  ThreadPool* = ref object
     globalWorkItems: WorkStealingQueue
-    workers: seq[ptr ThreadPoolWorker]
+    workers: seq[owned ThreadPoolWorker]
     spinLock: SpinLock
     workAvailable: Semaphore
     workerCount: Atomic[int]
 
-proc init*(self: var ThreadPool) =
-  self.globalWorkItems.init()
-  self.workers.setLen(MaxThreadCount)
+proc newThreadPool*(): owned ThreadPool =
+  new result
+  result.globalWorkItems.init()
+  result.workers.setLen(MaxThreadCount)
 
 var
-  threadPool: ThreadPool
-  threadPoolWorker {.threadvar.}: ptr ThreadPoolWorker
+  threadPool = newThreadPool()
+  threadPoolWorker {.threadvar.}: ThreadPoolWorker
 
-threadPool.init()
+proc processWorkItems(self: ThreadPoolWorker) {.thread.}
 
-proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.}
+proc newThreadPoolWorker*(): owned ThreadPoolWorker =
+  new result
+  result.localWorkItems.init()
+  result.threadPool = threadPool
+  createThread(result.thread, processWorkItems, result)
 
-proc init*(self: var ThreadPoolWorker) =
-  self.localWorkItems.init()
-  self.threadPool = addr threadPool
-  createThread(self.thread, processWorkItems, addr self)
-
-proc requestWorker(self: var ThreadPool) =
+proc requestWorker(self: ThreadPool) =
 
   self.workAvailable.signal()
 
@@ -45,16 +48,14 @@ proc requestWorker(self: var ThreadPool) =
       break
 
     if self.workerCount.compareExchangeWeak(count, count + 1, moRelaxed):
-      let worker = alloc0 ThreadPoolWorker
-      worker[].init()
-      self.workers[count] = worker
+      self.workers[count] = newThreadPoolWorker()
       break      
 
-proc markRequestSatisfied(self: var ThreadPool) =
+proc markRequestSatisfied(self: ThreadPool) =
   discard
   # TODO: Decrease semaphore counter
 
-proc processWorkItems(self: ptr ThreadPoolWorker) {.thread.} =
+proc processWorkItems(self: ThreadPoolWorker) {.thread.} =
 
   threadPoolWorker = self
 

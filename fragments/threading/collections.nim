@@ -1,6 +1,9 @@
 import std/locks, concurrency/atomics
 import threading_primitives
 
+when not defined nimV2:
+  {.error: "Legacy run-time is not supported".}
+
 # type
 #   Segment[T] = object
 #     items: seq[T]
@@ -91,14 +94,14 @@ import threading_primitives
 
 type
   WorkStealingQueue* = object
-    items: seq[proc()]
+    items: seq[owned proc()]
     head, tail: Atomic[int]
     foreignLock: SpinLock
 
 proc init*(self: var WorkStealingQueue) =
   newSeq(self.items, 1 shl 2)
 
-proc enqueue*(self: var WorkStealingQueue; item: proc()) =
+proc enqueue*(self: var WorkStealingQueue; item: owned proc()) =
 
   var currentTail = self.tail.load(moRelaxed)
   var mask = self.items.len - 1 # items.len is a power of 2, so `and mask` is equivalent to `mod items.len`
@@ -127,10 +130,10 @@ proc enqueue*(self: var WorkStealingQueue; item: proc()) =
 
       if count >= mask:
         # Reallocate the array and make items contiguous
-        let items = self.items
-        self.items = newSeq[proc()](items.len shl 1)
+        var items = move self.items
+        self.items = newSeq[owned proc()](items.len shl 1)
         for i in 0 ..< count:
-          self.items[i] = items[(currentHead + i) and mask]
+          self.items[i] = move items[(currentHead + i) and mask]
 
         # Reset head and tail
         mask = self.items.len - 1
@@ -142,7 +145,7 @@ proc enqueue*(self: var WorkStealingQueue; item: proc()) =
       self.items[currentTail and mask] = item
       self.tail.store(currentTail + 1, moRelaxed)
 
-proc dequeue*(self: var WorkStealingQueue): proc() =
+proc dequeue*(self: var WorkStealingQueue): owned proc() =
 
   while true:
 
@@ -160,7 +163,10 @@ proc dequeue*(self: var WorkStealingQueue): proc() =
     # interaction with a steal, so take the fast path
     if self.head.load(moRelaxed) <= localTail:
       let index = self.tail.load(moRelaxed) and mask
-      let item = self.items[index]
+
+      #echo index, " ", cast[int](unown(self.items[index]).rawproc)
+
+      let item = move self.items[index]
       fence(moAcquire)
 
       if item == nil:
@@ -175,7 +181,7 @@ proc dequeue*(self: var WorkStealingQueue): proc() =
 
         if self.head.load(moRelaxed) <= localTail:
           let index = localTail and mask
-          let item = self.items[index]
+          let item = move self.items[index]
           fence(moAcquire)
 
           if (item == nil):
@@ -189,7 +195,7 @@ proc dequeue*(self: var WorkStealingQueue): proc() =
           self.tail.store(localTail + 1, moRelaxed)
           return nil
 
-proc steal*(self: var WorkStealingQueue): tuple[item: proc(); missedSteal: bool] =
+proc steal*(self: var WorkStealingQueue): tuple[item: owned proc(); missedSteal: bool] =
 
   while true:
     # Queue is empty
@@ -206,7 +212,7 @@ proc steal*(self: var WorkStealingQueue): tuple[item: proc(); missedSteal: bool]
       if localHead < self.tail.load(moRelaxed):
         let mask = self.items.len - 1
         let index = localHead and mask
-        let item = self.items[index]
+        let item = move self.items[index]
         fence(moAcquire)
 
         if item == nil:
@@ -227,7 +233,7 @@ when isMainModule:
 
   var
     queue: WorkStealingQueue
-    items = newSeq[proc()]()
+    items = newSeq[owned proc()]()
 
   for i in 0 ..< 10:
     closureScope:
@@ -235,8 +241,8 @@ when isMainModule:
       items.add(proc() = echo local)
 
   queue.init()
-  for item in items:
-    queue.enqueue(item)
+  for item in items.mitems:
+    queue.enqueue(move item)
 
   while true:
     let item = queue.dequeue()
