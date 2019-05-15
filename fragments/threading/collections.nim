@@ -169,7 +169,7 @@ proc dequeue*(self: var WorkStealingQueue): owned proc() =
       let item = move self.items[index]
       fence(moAcquire)
 
-      if item == nil:
+      if unown(item) == nil:
         continue
 
       self.items[index] = nil
@@ -184,7 +184,7 @@ proc dequeue*(self: var WorkStealingQueue): owned proc() =
           let item = move self.items[index]
           fence(moAcquire)
 
-          if (item == nil):
+          if unown(item) == nil:
             continue
 
           self.items[index] = nil
@@ -215,7 +215,7 @@ proc steal*(self: var WorkStealingQueue): tuple[item: owned proc(); missedSteal:
         let item = move self.items[index]
         fence(moAcquire)
 
-        if item == nil:
+        if unown(item) == nil:
           continue
 
         self.items[index] = nil
@@ -246,11 +246,11 @@ when isMainModule:
 
   while true:
     let item = queue.dequeue()
-    if item == nil:
+    if unown(item) == nil:
       break
     item()
 
     let (item2, missedSteal) = queue.steal()
-    if item2 == nil:
+    if unown(item2) == nil:
       break
     item2()    
