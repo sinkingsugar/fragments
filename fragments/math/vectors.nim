@@ -11,10 +11,18 @@ type
     V.laneCount == width
     v.getLane(int) is T
     m.setLane(int, T)
-    
+
   SomeVector* = concept type T of SomeWide
     ## A wide type marked as vector. Vectors automatically support some basic operations.
     T.isVector()
+
+  Vectorizable* = concept type S
+    S.isVectorizable
+    #type W = wide(S)
+    # W is SomeWide
+    # S is scalarType(W)
+
+  TrivialScalar = SomeNumber | enum | bool
 
 template restrict*(arg: untyped): untyped =
   when defined(vcc):
@@ -93,12 +101,16 @@ template `*=` *(left: var SomeVector; right: SomeVector.scalarType) = left = lef
 template `/=` *(left: var SomeVector; right: SomeVector.scalarType) = left = left / right
 
 # Vectorized version of primitive types
+template isVectorizable*(T: type TrivialScalar): bool = true
+template wide*(T: type TrivialScalar): untyped = Wide[T, 4]
 template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
 template laneCount*[T; width: static int](t: type Wide[T, width]): int = width
 template getLane*[T; width: static int](wide: Wide[T, width]; index: int): T = wide.elements[index]
 template setLane*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) = wide.elements[index] = value
 
 # Vectorized version of arrays
+template isVectorizable*[T; size: static int](t: typedesc[array[size, T]]): bool = true
+template wide*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
 template scalarType*[size: static int](t: type array[size, SomeWide]): typedesc = array[size, SomeWide.T]
 template laneCount*[size: static int](t: type array[size, SomeWide]): int = SomeWide.width
 func getLane*[size: static int](wide: array[size, SomeWide]; laneIndex: int): array[size, SomeWide.T] {.inline.} =
@@ -177,14 +189,21 @@ func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[
     r.setLane(i, value) # TODO: Why does this not work directly on result?
   return r
 
-var vectorizedTypes {.compileTime.}: seq[tuple[scalar: NimNode; width: int; wide: NimNode]]
-
 type
+  VectorizedType = object
+    scalarType: NimNode
+    wideType: NimNode
+    width: int
+    getLane: NimNode
+    setLane: NimNode
+
   WideBuilderContext = object
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
     symbolMap: seq[(NimNode, NimNode)]
     isLocal: bool
+
+var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
 func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
   if node.kind == nnkSym:
@@ -285,7 +304,7 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
 
     # Vectorize the field type
     let fieldType = fieldDefs[^2]
-    let newFieldType = context.makeWideTypeRecursive(fieldType)
+    let newFieldType = context.makeWideTypeRecursive(fieldType) # quote do: wide(typeof(`fieldType`))
     newFieldDefs.add(newFieldType)
 
     newFieldDefs.add(newEmptyNode())
@@ -295,8 +314,17 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
 
   # Create a new symbol for the type and add it to the list
   # of known vectorized types
-  var symbol = genSym(nskType, scalarTypeName.repr & "_Wide")
-  vectorizedTypes.add((scalarTypeName, 4, symbol))
+  let
+    symbol = genSym(nskType, scalarTypeName.repr & "_Wide")
+    getLane = genSym(nskFunc)
+    setLane = genSym(nskFunc)
+
+  vectorizedTypes.add(VectorizedType(
+    scalarType: scalarTypeName,
+    width: 4,
+    wideType: symbol,
+    getLane: genSym(nskFunc),
+    setLane: genSym(nskFunc)))
 
   if context.isLocal:
     context.generatedProcs.add(quote do:
@@ -331,11 +359,11 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): NimNode {
 proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode {.compileTime.} =
 
   for vectorizedType in vectorizedTypes:
-    if T.sameType(vectorizedType.scalar) and
+    if T.sameType(vectorizedType.scalarType) and
       vectorizedType.width == 4:
     #if T == vectorizedType.scalar:
       #echo "Reused type: " & (repr vectorizedType.scalar) & " --> " & (repr vectorizedType.wide)
-      return vectorizedType.wide
+      return vectorizedType.wideType
 
   case T.typeKind:
     of ntyTypeDesc:
@@ -357,7 +385,7 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode
       result = T.getTypeInst.copyNimTree().replaceSymbols(context)
       var elementType = result[2]
       result[2] = context.makeWideTypeRecursive(elementType)
-
+     
     of ntyGenericInst, ntyObject, ntyTuple:
       # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
       return context.makeWideComplexType(T)
@@ -365,15 +393,10 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): NimNode
     # TODO: Should distinct introspect object types? Should it handle trivial types differently?
     #of ntyDistinct, ntyEnum, ntyFloat, ...:
     else:
-      let
-        name = ident($T)
-        width = 4
       return quote do:
-        Wide[`name`, `width`]
-        #Wide[`T`]
-        #array[4, `T`]
+        wide(typeof(`T`))
 
-macro wide*(T: typedesc): untyped =
+macro wide*(T: typedesc[not Vectorizable]): untyped =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   
   let typeDesc = T.getTypeInst()
@@ -412,12 +435,17 @@ when isMainModule:
 
   echo w + v
 
+  echo Wide[float, 4] is SomeWide
+  echo array[10, Wide[float, 4]] is SomeWide
+
+  echo float is Vectorizable
+  #echo array[4, float] is Vectorizable
+
   # Test primitive type vectorization
-  echo (wide float).name
+  assert (wide float) is Wide
 
   # Test array vectorization and concept
   var a: wide array[4, float]
-  echo type(a).name
   echo a.getLane(0)
 
   # Test complex type vectorization
