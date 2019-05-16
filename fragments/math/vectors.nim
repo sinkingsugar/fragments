@@ -20,7 +20,7 @@ type
     # v.getLaneImpl(int) is T
     # m.setLaneImpl(int, T)
 
-  SomeVector*[T; width: static int] = concept v, var m, type V
+  SomeVector*#[T; width: static int]# = concept #[v, var m,]# type V
     ## A wide type marked as vector. Vectors automatically support some basic operations.
     V.isVector()
     # v[int] is T
@@ -59,12 +59,12 @@ macro staticFor*(name: untyped; count: static int; body: untyped): untyped =
   #     `body`
 
 # Helpers for mapping scalar operations to wide types
-template makeUniversal*(T: typedesc, op: untyped): untyped =
+template makeUniversal*(T: typedesc[SomeVector], op: untyped): untyped =
   proc `op`*[U: T](value: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(value[i])
 
-template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
+template makeUniversalBinary*(T: typedesc[SomeVector], op: untyped): untyped =
   proc `op`*[U: T](left, right: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(left[i], right[i])
@@ -158,7 +158,7 @@ template laneCount*(T: typedesc AnyWide): int =
 template getLane*(self: AnyWide; index: int): untyped =
   self.getLaneImpl(index)
 
-template setLane*(self: AnyWide; index: int; value: untyped): untyped =
+template setLane*(self: var AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
 macro wideInternal(T: typedesc): untyped =
@@ -190,7 +190,7 @@ macro getLane*(self: not AnyWide; index: int): untyped =
       return newCall(typeInfo.getLane, self, index)
   error("No getLane proc generated for complex type", self)
 
-macro setLane*(self: not AnyWide; index: int; value: untyped): untyped =
+macro setLane*(self: var (not AnyWide); index: int; value: untyped): untyped =
   for typeInfo in vectorizedTypes:
     # TODO: getTypeInst are not the same?
     if self.getType().sameType(typeInfo.wideType.getType()):

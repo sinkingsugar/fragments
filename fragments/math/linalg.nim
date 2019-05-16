@@ -65,6 +65,20 @@ template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height
 template isVectorizable*(_: type SymmetricMatrix): bool = true
 template wideImpl*[T; size: static int](_: type SymmetricMatrix[T, size]): typedesc = SymmetricMatrix[wide(typeof(T)), size]
 
+template scalarTypeImpl*[T; size: static int](t: type Vector[T, size]): typedesc = Vector[T.scalarType, size]
+template laneCountImpl*[T; size: static int](t: type Vector[T, size]): int = T.laneCount
+
+func getLaneImpl*[size; T](self: Vector[T, size]; laneIndex: int): auto {.inline.} =
+  var r: Vector[T.scalarType, size]
+  for i in 0 ..< size:
+    r.elements[i] = self.elements[i].getLane(laneIndex)
+  return r
+
+func setLaneImpl*[size; T; S](self: var Vector[T, size]; laneIndex: int; value: Vector[S, size]) {.inline.} =
+  when S isnot T.scalarType: {.error.}
+  for i in 0 ..< size:
+    self.elements[i].setLane(laneIndex, value.elements[i])
+
 # Vectors inherit universal pointwise ops
 template isVector*(_: type Vector): bool = true
 template len*[T; size: static int](_: type Vector[T, size]): int = size
