@@ -7,17 +7,18 @@ type
 
   SomeWide*[T; width: static int] = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    V.scalarType is T
-    V.laneCount == width
+    V.scalarTypeImpl is T
+    V.laneCountImpl == width
     v.getLaneImpl(int) is T
     m.setLaneImpl(int, T)
 
   AnyWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    const width = V.laneCount
-    type T = V.scalarType
-    v.getLaneImpl(int) is T
-    m.setLaneImpl(int, T)
+    const width = V.laneCountImpl
+    type T = V.scalarTypeImpl
+    # TODO: Causes compiler crash
+    # v.getLaneImpl(int) is T
+    # m.setLaneImpl(int, T)
 
   SomeVector* = concept type T of SomeWide
     ## A wide type marked as vector. Vectors automatically support some basic operations.
@@ -139,6 +140,12 @@ proc generateWideType(T: NimNode): VectorizedTypeInfo
 template wide*(T: typedesc[Vectorizable]): typedesc =
   wideImpl(T)
 
+template scalarType*(T: typedesc AnyWide): typedesc =
+  scalarTypeImpl(T)
+
+template laneCount*(T: typedesc AnyWide): int =
+  laneCountImpl(T)
+
 template getLane*(self: AnyWide; index: int): untyped =
   self.getLaneImpl(index)
 
@@ -154,23 +161,38 @@ macro wideInternal(T: typedesc): untyped =
 template wide*(T: typedesc[not Vectorizable]): typedesc =
   wideInternal(T)
 
+macro scalarType*(T: typedesc[not AnyWide]): untyped =
+  for typeInfo in vectorizedTypes:
+    echo typeInfo.wideType.getTypeInst.repr
+    # TODO: getTypeInst are not the same?
+    if T.getTypeInst()[1].getType().sameType(typeInfo.wideType.getType()):
+      return typeinfo.scalarType
+
+macro laneCount*(T: typedesc[not AnyWide]): untyped =
+  for typeInfo in vectorizedTypes:
+    echo typeInfo.wideType.getTypeInst.repr
+    # TODO: getTypeInst are not the same?
+    if T.getTypeInst()[1].getType().sameType(typeInfo.wideType.getType()):
+      return newLit(typeInfo.width)
+
 macro getLane*(self: not AnyWide; index: int): untyped =
   for typeInfo in vectorizedTypes:
-    if self.getType().sameType(typeInfo.wideType):
-      return result.add(newCall(typeInfo.getLane, self, index))
+    if self.getType().sameType(typeInfo.wideType.getType()):
+      return newCall(typeInfo.getLane, self, index)
   error("No getLane proc generated for complex type", self)
 
 macro setLane*(self: not AnyWide; index: int; value: untyped): untyped =
   for typeInfo in vectorizedTypes:
-    if self.getType().sameType(typeInfo.wideType):
-      return result.add(newCall(typeInfo.setLane, self, index, value))
+    # TODO: getTypeInst are not the same?
+    if self.getType().sameType(typeInfo.wideType.getType()):
+      return newCall(typeInfo.setLane, self, index, value)
   error("No setLane proc generated for complex type", self)
 
 # Vectorized version of primitive types
 template isVectorizable(T: type TrivialScalar): bool = true
 template wideImpl*(T: type TrivialScalar): untyped = Wide[T, 4]
-template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
-template laneCount*[T; width: static int](t: type Wide[T, width]): int = width
+template scalarTypeImpl*[T; width: static int](t: type Wide[T, width]): typedesc = T
+template laneCountImpl*[T; width: static int](t: type Wide[T, width]): int = width
 template getLaneImpl*[T; width: static int](wide: Wide[T, width]; index: int): T = wide.elements[index]
 template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) = wide.elements[index] = value
 
@@ -178,13 +200,17 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
 template isVectorizable(T: type array): bool = true
 template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
-template scalarType*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
-template laneCount*[size; T](t: type array[size, T]): int = T.laneCount
+template scalarTypeImpl*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
+template laneCountImpl*[size; T](t: type array[size, T]): int = T.laneCount
 
-func getLaneImpl*[size](wide: array[size, AnyWide]; laneIndex: int): array[size, AnyWide.T] {.inline.} =
+func getLaneImpl*[size; T](wide: array[size, T]; laneIndex: int): auto {.inline.} =
+  var r: array[size, T.scalarType] # If this is the result type directly, we get "Error: cannot generate VM code for" when this calls the macro version
   for i in 0 ..< wide.len:
-    result[i] = wide[i].getLane(laneIndex)
-func setLaneImpl*[size](wide: var array[size, AnyWide]; laneIndex: int, value: array[size, AnyWide.T]) {.inline.} =
+    r[i] = wide[i].getLane(laneIndex)
+  return r
+
+func setLaneImpl*[size; T; S](wide: var array[size, T]; laneIndex: int; value: array[size, S]) {.inline.} =
+  when S isnot T.scalarType: {.error.} # Using this in the signature directly causes "Error: cannot generate VM code for" when this calls the macro version
   for i in 0 ..< wide.len:
     wide[i].setLane(laneIndex, value[i])
 
@@ -349,8 +375,8 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
       newFieldDefs.add(newFieldDef)
 
       # Generate a lane getter and setter for each field
-      # getters.add(quote do: `resultSym`.`fieldIdent` = `selfSym`.`fieldIdent`.getLane(`laneIndexSym`))
-      # setters.add(quote do: `selfSym`.`fieldIdent`.setLane(`laneIndexSym`, `valueSym`.`fieldIdent`))
+      getters.add(quote do: `resultSym`.`fieldIdent` = `selfSym`.`fieldIdent`.getLane(`laneIndexSym`))
+      setters.add(quote do: `selfSym`.`fieldIdent`.setLane(`laneIndexSym`, `valueSym`.`fieldIdent`))
 
     # Vectorize the field type
     let fieldType = fieldDefs[^2]
@@ -373,27 +399,15 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
     scalarType: scalarTypeName,
     width: 4,
     wideType: symbol,
-    getLane: genSym(nskFunc),
-    setLane: genSym(nskFunc))
+    getLane: getLane,
+    setLane: setLane)
 
   vectorizedTypes.add(result)
 
-  if context.isLocal:
-    context.generatedProcs.add(quote do:
-      template scalarType(t: type `symbol`): typedesc = `scalarTypeName`
-      template laneCount(t: type `symbol`): int = 4
-      func `getLane`(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline, used.} = discard # `getters`
-      func `setLane`(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline, used.} = discard # `setters`
-      template isVector(_: type `symbol`): bool = `scalarTypeName` is SomeVector
-    )
-  else:
-    context.generatedProcs.add(quote do:
-      template scalarType*(t: type `symbol`): typedesc = `scalarTypeName`
-      template laneCount*(t: type `symbol`): int = 4
-      func `getLane`*(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = discard # `getters`
-      func `setLane`*(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = discard # `setters`
-      template isVector*(_: type `symbol`): bool = `scalarTypeName` is SomeVector
-    )
+  context.generatedProcs.add(quote do:
+    func `getLane`(`selfSym`: `symbol`; `laneIndexSym`: int): `scalarTypeName` {.inline.} = `getters`
+    func `setLane`(`selfSym`: var `symbol`; `laneIndexSym`: int; `valueSym`: `scalarTypeName`) {.inline.} = `setters`
+  )
   
   # Create the definition of the vectorized type
   context.generatedTypes.add(nnkTypeDef.newTree(
@@ -411,8 +425,7 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
   for vectorizedType in vectorizedTypes:
     if T.sameType(vectorizedType.scalarType) and
       vectorizedType.width == 4:
-    #if T == vectorizedType.scalar:
-      #echo "Reused type: " & (repr vectorizedType.scalar) & " --> " & (repr vectorizedType.wide)
+      #echo "Reused type: " & (repr vectorizedType.scalarType) & " --> " & (repr vectorizedType.wideType)
       return vectorizedType
 
   case T.typeKind:
@@ -514,30 +527,35 @@ when isMainModule:
       rValue*: Bar
       aValue: array[2, Bar]
 
-  assert Bar isnot Vectorizable
-  assert Foo isnot Vectorizable
-
-  type
     WideBar = wide Bar
 
     WideFoo = wide Foo
 
+  assert Bar isnot Vectorizable
+  assert Foo isnot Vectorizable
+  
   assert (wide float) is SomeWide
   assert (wide float) is SomeWide[float, 4]
+  assert array[10, WideFoo] is AnyWide
 
-  # # Test type reuse
-  # var x: WideFoo
-  # var y: WideBar
-  # x.rValue = y
+  # Test type reuse
+  assert WideFoo is wide Foo
+  assert WideFoo.rValue is WideBar
 
-  # echo WideBar.laneCount
-  # echo WideFoo.scalarType.name
-  # x.setLane(0, Foo())
-  # discard x.getLane(0)
+  echo WideBar.laneCount
+  echo WideFoo.scalarType.name
 
-  # # # Test logical ops
-  # let b0 = w > v
-  # let b1 = not b0
-  # let wv = select(b1, w, v)
-  # echo b0
-  # echo wv
+  var x: WideFoo
+  var xa: array[10, WideBar]
+  var xs: typeof(xa).scalarType
+  x.setLane(0, Foo())
+  discard x.getLane(0)
+  xa.setLane(0, xs)
+  discard xa.getLaneImpl(0)
+
+  # # Test logical ops
+  let b0 = w > v
+  let b1 = not b0
+  let wv = select(b1, w, v)
+  echo b0
+  echo wv
