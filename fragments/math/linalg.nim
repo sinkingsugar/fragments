@@ -27,9 +27,6 @@ type
   Vector2* = Vector[float32, 2]
   Vector3* = Vector[float32, 3]
   Vector4* = Vector[float32, 4]
-  Vector2Wide* = wide Vector2
-  Vector3Wide* = wide Vector3
-  Vector4Wide* = wide Vector4
 
   Half2* = Vector[Half, 2]
   Half3* = Vector[Half, 3]
@@ -44,10 +41,9 @@ type
   Bool4* = Vector[bool, 4]
 
   # Quaternion types
-  QuaternionBase*[T: SomeFloat] = object
+  QuaternionBase*[T] = object
     elements: array[4, T]
   Quaternion* = QuaternionBase[float32]
-  QuaternionWide* = wide Quaternion
 
   # Common matrix types
   Matrix2x2* = Matrix[float32, 2, 2]
@@ -55,27 +51,28 @@ type
   Matrix3x3* = Matrix[float32, 3, 3]
   Matrix4x3* = Matrix[float32, 4, 3]
   Matrix4x4* = Matrix[float32, 4, 4]
-  Matrix4x4Wide* = wide Matrix4x4
 
   NonScalar*[T] = concept v, var m
     v.elements[int] is T
     m.elements[int] = T
     v.elements.len is int
 
-# Vectorized version of primitive types
-template scalarType*[T; width: static int](t: type Vector[T, width]): type = T
-template laneCount*[T; width: static int](t: type Vector[T, width]): int = width
-func getLane*(wide: Vector; laneIndex: int): Vector.T {.inline.} = wide.elements[laneIndex]
-func setLane*(wide: var Vector; laneIndex: int; value: Vector.T) {.inline.} = wide.elements[laneIndex] = value
+# Custom vectorization. Vector-like types simply have their members serialized.
+template isVectorizable*(_: type Vector): bool = true
+template wideImpl*[T; size: static int](_: type Vector[T, size]): typedesc = Vector[wide(typeof(T)), size]
+
+template isVectorizable*(_: type QuaternionBase): bool = true
+template wideImpl*[T](_: type QuaternionBase[T]): typedesc = QuaternionBase[wide(typeof(T))]
+
+template isVectorizable*(_: type Matrix): bool = true
+template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
+
+template isVectorizable*(_: type SymmetricMatrix): bool = true
+template wideImpl*[T; size: static int](_: type SymmetricMatrix[T, size]): typedesc = SymmetricMatrix[wide(typeof(T)), size]
+
+# Vectors inherit universal pointwise ops
 template isVector*(_: type Vector): bool = true
-
-# These cannot be defined using the concept, since they would conflict with the generic version in the system module
-makeUniversalBinary(Vector, min)
-makeUniversalBinary(Vector, max)
-
-# converter toVector[T; size: static int](value: T): Vector[T, size] =
-#   for i in 0..<size:
-#     result[i] = value
+template len*[T; size: static int](_: type Vector[T, size]): int = size
 
 # Vector, quaternion and matrix subscript
 func `[]`*(self: NonScalar; index: int): NonScalar.T =
@@ -90,6 +87,24 @@ func `[]`*(self: Matrix; row, column: int): Matrix.T =
 
 func `[]=`*(self: var Matrix; row, column: int; value: Matrix.T) =
   self.elements[row * Matrix.width + column] = value
+
+# Common wide types
+type
+  Vector2Wide* = wide Vector2
+  Vector3Wide* = wide Vector3
+  Vector4Wide* = wide Vector4
+
+  QuaternionWide* = wide Quaternion
+
+  Matrix4x4Wide* = wide Matrix4x4
+
+# These cannot be defined using the concept, since they would conflict with the generic version in the system module
+makeUniversalBinary(Vector, min)
+makeUniversalBinary(Vector, max)
+
+# converter toVector[T; size: static int](value: T): Vector[T, size] =
+#   for i in 0..<size:
+#     result[i] = value
 
 # Matrix diagonal
 func diag*[T; size: static int](self: Matrix[T, size, size]): Vector[T, size] =
@@ -316,16 +331,16 @@ func cross*[T](left, right: Vector[T, 3]): Vector[T, 3] =
 func lengthSquared*(self: Vector): Vector.T =
   dot(self, self)
 
-func length*[T: SomeFloat; width: static int](self: Vector[T, width]): T =
+func length*[T; width: static int](self: Vector[T, width]): T =
   self.lengthSquared().sqrt()
 
 func distanceSquared*(left, right: Vector): Vector.T =
   (left - right).lengthSquared
 
-func distance*[T: SomeFloat; width: static int](left, right: Vector[T, width]): T =
+func distance*[T; width: static int](left, right: Vector[T, width]): T =
   (left - right).length
 
-func normalize*[T: SomeFloat; width: static int](self: Vector[T, width]): Vector[T, width] =
+func normalize*[T; width: static int](self: Vector[T, width]): Vector[T, width] =
   let length = self.length
   if length > 0:
     return self / self.length
@@ -345,16 +360,16 @@ func normalize*(self: QuaternionBase): QuaternionBase =
   else:
     return self
 
-func lerp*[T: SomeFloat; width: static int](min, max: Vector[T, width]; amount: T): Vector[T, width] =
+func lerp*[T; width: static int](min, max: Vector[T, width]; amount: T): Vector[T, width] =
   for i in 0..<Vector.size:
     result[i] = lerp(min[i], max[i], amount)
 
-func smoothstep*[T: SomeFloat; width: static int](min, max: Vector[T, width]; amount: T): Vector[T, width] =
+func smoothstep*[T; width: static int](min, max: Vector[T, width]; amount: T): Vector[T, width] =
   var lerpAmount = saturate(amount)
   lerpAmount = lerpAmount * lerpAmount * (3 - (2 * lerpAmount))
   return lerp(min, max, lerpAmount)
 
-func hermite*[T: SomeFloat; width: static int](value1, value2, tangent1, tangent2: Vector[T, width], amount: T): Vector[T, width] =
+func hermite*[T; width: static int](value1, value2, tangent1, tangent2: Vector[T, width], amount: T): Vector[T, width] =
   let
     squared = amount * amount
     cubed = amount * squared
@@ -365,7 +380,7 @@ func hermite*[T: SomeFloat; width: static int](value1, value2, tangent1, tangent
 
   return (((value1 * part1) + (value2 * part2)) + (tangent1 * part3)) + (tangent2 * part4);
 
-func catmullRom*[T: SomeFloat; width: static int](value1, value2, value3, value4: Vector[T, width], amount: T): Vector[T, width] =
+func catmullRom*[T; width: static int](value1, value2, value3, value4: Vector[T, width], amount: T): Vector[T, width] =
   let
     squared = amount * amount
     cubed = squared * amount
@@ -377,7 +392,7 @@ func catmullRom*[T: SomeFloat; width: static int](value1, value2, value3, value4
 
   return 0.5 * (value1 * factor0 + value2 * factor1 + value3 * factor2 + value4 * factor3)
 
-func barycentric*[T: SomeFloat; width: static int](value1, value2, value3: Vector[T, width]; amount1, amount2: T): Vector[T, width] =
+func barycentric*[T; width: static int](value1, value2, value3: Vector[T, width]; amount1, amount2: T): Vector[T, width] =
   (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
 
 func changeBasis*(self, basis: Matrix): Matrix =
@@ -386,7 +401,7 @@ func changeBasis*(self, basis: Matrix): Matrix =
 func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
 
-func transformCoordinate*[T: SomeFloat](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
+func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
 
@@ -415,7 +430,7 @@ func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T,
   result.y = ((vector.x * (xy + wz)) + (vector.y * ((1.T - xx) - zz))) + (vector.z * (yz - wx))
   result.z = ((vector.x * (xz - wy)) + (vector.y * (yz + wx))) + (vector.z * ((1.T - xx) - yy))
 
-func project*[T: SomeFloat](vector: Vector[T, 3]; x, y, width, height, minZ, maxZ: T; worldViewProjection: Matrix): Vector[T, 3] =
+func project*[T](vector: Vector[T, 3]; x, y, width, height, minZ, maxZ: T; worldViewProjection: Matrix): Vector[T, 3] =
   let v = worldViewProjection.transformCoordinate(vector)
   result.x = ((1.T + v.x) * (T)0.5 * width) + x
   result.y = ((1.T - v.y) * (T)0.5 * height) + y
@@ -432,7 +447,7 @@ func concatenate*(first, second: QuaternionBase): QuaternionBase =
   # Concatenate two quaternions representing rotations. The first argument is the first rotation applied.
   second * first
 
-func fromAxisAngle*[T: SomeFloat](_: type QuaternionBase[T]; axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
+func fromAxisAngle*[T](_: type QuaternionBase[T]; axis: Vector[T, 3]; angle: T): QuaternionBase[T] =
   # TODO: identity if zero axis?
   let halfAngle = angle * (T)0.5;
   result.xyz = axis.normalize() * sin(halfAngle)
@@ -465,7 +480,7 @@ func scaling*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
   result.m00m11m22 = value
   result.m33 = 1.T
 
-func rotationAxis*[T: SomeFloat](axis: Vector[T, 3]; angle: T): Matrix[T, 4, 4] =
+func rotationAxis*[T](axis: Vector[T, 3]; angle: T): Matrix[T, 4, 4] =
   let
     sin = sin(angle)
     cos = cos(angle)
@@ -488,19 +503,19 @@ func rotationAxis*[T: SomeFloat](axis: Vector[T, 3]; angle: T): Matrix[T, 4, 4] 
   result.m22 = zz + (cos * (1.0f - zz))
   result.m33 = 1.T
 
-func rotationX*[T: SomeFloat](angle: T): Matrix[T, 4, 4] =
+func rotationX*[T](angle: T): Matrix[T, 4, 4] =
   rotationAxis(Vector[T, 3].unitX, angle)
 
-func rotationY*[T: SomeFloat](angle: T): Matrix[T, 4, 4] =
+func rotationY*[T](angle: T): Matrix[T, 4, 4] =
   rotationAxis(Vector[T, 3].unitY, angle)
 
-func rotationZ*[T: SomeFloat](angle: T): Matrix[T, 4, 4] =
+func rotationZ*[T](angle: T): Matrix[T, 4, 4] =
   rotationAxis(Vector[T, 3].unitZ, angle)
 
 func rotationYawPitchRoll*[T](yaw, pitch, roll: T): Matrix[T, 4, 4] =
   rotationZ(roll) * rotationX(pitch) * rotationY(yaw)
 
-func toMatrix*[T: SomeFloat](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
+func toMatrix*[T](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
   let
     xx = rotation.x * rotation.x
     yy = rotation.y * rotation.y
@@ -522,7 +537,7 @@ func toMatrix*[T: SomeFloat](rotation: QuaternionBase[T]): Matrix[T, 3, 3] =
   result.m21 = 2.T * (yz - xw)
   result.m22 = 1.T - (2.T * (yy + xx))
 
-func toQuaternion*[T: SomeFloat](self: Matrix[T, 3, 3] | Matrix[T, 4, 4]): QuaternionBase[T] =
+func toQuaternion*[T](self: Matrix[T, 3, 3] | Matrix[T, 4, 4]): QuaternionBase[T] =
   let scale = self.m00 + self.m11 + self.m22
   
   if scale > 0.T:
@@ -563,7 +578,7 @@ func toQuaternion*[T: SomeFloat](self: Matrix[T, 3, 3] | Matrix[T, 4, 4]): Quate
     result.z = (T)0.5 * sqrt
     result.w = (self.m01 - self.m10) * half
 
-func perspectiveOffCenter*[T: SomeFloat](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
+func perspectiveOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
 
   let zRange = far / (far - near)
 
@@ -575,7 +590,7 @@ func perspectiveOffCenter*[T: SomeFloat](left, right, bottom, top, near, far: T)
   result.m23 = -1.T
   result.m32 = -near * zRange
 
-func perspectiveFov*[T: SomeFloat](fov, aspect, near, far: T): Matrix[T, 4, 4] =
+func perspectiveFov*[T](fov, aspect, near, far: T): Matrix[T, 4, 4] =
   let
     yScale = 1.T / tan(fov * (T)0.5)
     xScale = yScale / aspect
@@ -585,7 +600,7 @@ func perspectiveFov*[T: SomeFloat](fov, aspect, near, far: T): Matrix[T, 4, 4] =
   
   return perspectiveOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far)
 
-func orhographicOffCenter*[T: SomeFloat](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
+func orhographicOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
 
   let zRange = 1.T / (far - near)
   result.m00 = 2.T / (right - left)
@@ -596,14 +611,14 @@ func orhographicOffCenter*[T: SomeFloat](left, right, bottom, top, near, far: T)
   result.m32 = -near * zRange
   result.m33 = 1.T
 
-func orhographic*[T: SomeFloat](width, height, near, far: T): Matrix[T, 4, 4] =
+func orhographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
   let
     halfWidth = (T)0.5 * width
     halfHeight = (T)0.5 * height
 
   return orhographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
 
-func lookAt*[T: SomeFloat](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
+func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
 
   let
     zAxis = (eye - target).normalize()
@@ -671,6 +686,10 @@ func select*[T; width: static int](condition: Vector[bool, width]; a, b: Vector[
     result[i] = if condition[i]: a[i] else: b[i]
 
 when isMainModule:
+  assert Vector3Wide is Vector
+  assert Vector is SomeVector
+  assert Vector3Wide is SomeVector
+
   var v: Vector[float, 4] = [1.0, 2.0, 3.0, 4.0].toVector
   var a, b, c, d: Vector3
   var w: Vector[float, 2] = [5.0, 6.0].toVector
@@ -713,10 +732,8 @@ when isMainModule:
   echo q.toMatrix().toQuaternion()
 
   block:
-    assert Vector3Wide is SomeWide
-    assert Vector3Wide is SomeVector
-    var a, b: Vector3Wide
-    echo a + b
+    var a, b: Vector[Wide[float, 4], 3]
+    #echo a + b
 
 type
   Color3* = distinct Vector3
@@ -724,10 +741,6 @@ type
   Color4* = distinct Vector4
 
   Color* = distinct Vector[uint8, 4]
-
-  ColorBgra* = distinct Vector[uint8, 4]
-
-  ColorHsv* = distinct Vector4
 
   CompressedQuaternion* = distinct uint32
 
