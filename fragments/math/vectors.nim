@@ -7,15 +7,13 @@ type
 
   SomeWide*[T; width: static int] = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    #V.scalarType is T
-    #V.laneCount == width
+    V.scalarType is T
+    V.laneCount == width
     v.getLaneImpl(int) is T
     m.setLaneImpl(int, T)
 
-  SomeWide2* = concept v, var m, type V
+  AnyWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    #type A
-    #V.scalarType
     const width = V.laneCount
     type T = V.scalarType
     v.getLaneImpl(int) is T
@@ -26,9 +24,13 @@ type
     T.isVector()
 
   Vectorizable* = concept type S
-    #S is array or S is TrivialScalar
-    S.isVectorizable
-    #type W = wide(S)
+    ## A type that defines a way to generate a vectorized version by implementing `wideImpl`.
+    isVectorizable(S)
+
+    # TODO: Compiler crash when matching the type in a macro parameter?
+    # wideImpl(S)
+    # TODO: Compiler crash when deducing the type. Generic concept doesn't work either.
+    #type W = wideImpl(S)
     # W is SomeWide
     # S is scalarType(W)
 
@@ -137,10 +139,10 @@ proc generateWideType(T: NimNode): VectorizedTypeInfo
 template wide*(T: typedesc[Vectorizable]): typedesc =
   wideImpl(T)
 
-template getLane*(self: SomeWide2; index: int): untyped =
+template getLane*(self: AnyWide; index: int): untyped =
   self.getLaneImpl(index)
 
-template setLane*(self: SomeWide2; index: int; value: untyped): untyped =
+template setLane*(self: AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
 macro wideInternal(T: typedesc): untyped =
@@ -152,20 +154,20 @@ macro wideInternal(T: typedesc): untyped =
 template wide*(T: typedesc[not Vectorizable]): typedesc =
   wideInternal(T)
 
-macro getLane*(self: not SomeWide2; index: int): untyped =
+macro getLane*(self: not AnyWide; index: int): untyped =
   for typeInfo in vectorizedTypes:
     if self.getType().sameType(typeInfo.wideType):
       return result.add(newCall(typeInfo.getLane, self, index))
   error("No getLane proc generated for complex type", self)
 
-macro setLane*(self: not SomeWide2; index: int; value: untyped): untyped =
+macro setLane*(self: not AnyWide; index: int; value: untyped): untyped =
   for typeInfo in vectorizedTypes:
     if self.getType().sameType(typeInfo.wideType):
       return result.add(newCall(typeInfo.setLane, self, index, value))
   error("No setLane proc generated for complex type", self)
 
 # Vectorized version of primitive types
-template isVectorizable*(T: type TrivialScalar): bool = true
+template isVectorizable(T: type TrivialScalar): bool = true
 template wideImpl*(T: type TrivialScalar): untyped = Wide[T, 4]
 template scalarType*[T; width: static int](t: type Wide[T, width]): typedesc = T
 template laneCount*[T; width: static int](t: type Wide[T, width]): int = width
@@ -174,15 +176,15 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 
 # Vectorized version of arrays
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
-template isVectorizable*(T: type array): bool = true
+template isVectorizable(T: type array): bool = true
 template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
 template scalarType*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
 template laneCount*[size; T](t: type array[size, T]): int = T.laneCount
 
-func getLaneImpl*[size](wide: array[size, SomeWide2]; laneIndex: int): array[size, SomeWide2.T] {.inline.} =
+func getLaneImpl*[size](wide: array[size, AnyWide]; laneIndex: int): array[size, AnyWide.T] {.inline.} =
   for i in 0 ..< wide.len:
     result[i] = wide[i].getLane(laneIndex)
-func setLaneImpl*[size](wide: var array[size, SomeWide2]; laneIndex: int, value: array[size, SomeWide2.T]) {.inline.} =
+func setLaneImpl*[size](wide: var array[size, AnyWide]; laneIndex: int, value: array[size, AnyWide.T]) {.inline.} =
   for i in 0 ..< wide.len:
     wide[i].setLane(laneIndex, value[i])
 
@@ -480,55 +482,48 @@ when isMainModule:
 
   echo w + v
 
-  var a: array[10, Wide[float, 4]]
-  echo a.getLane(1)
-
   echo array[10, Wide[float, 4]].scalarType
 
   echo Wide[float, 4] is SomeWide
   echo array[10, Wide[float, 4]] is SomeWide
   echo array[10, float] isnot SomeWide
-  echo Wide[float, 4] is SomeWide2
-  echo array[10, Wide[float, 4]] is SomeWide2
-  echo array[10, float] isnot SomeWide2
+  echo Wide[float, 4] is AnyWide
+  echo array[10, Wide[float, 4]] is AnyWide
+  echo array[10, float] isnot AnyWide
 
   echo float is Vectorizable
   echo array[4, float] is Vectorizable
 
-  # # Test primitive type vectorization
-  # assert (wide float) is Wide
+  # Test primitive type vectorization
+  assert (wide float) is Wide
 
-  # # Test array vectorization and concept
-  # var a: wide array[4, float]
-  # #echo a.getLane(0)
+  # Test array vectorization and concept
+  var a: wide array[4, float]
+  #echo a.getLane(0)
 
-  # # Test complex type vectorization
-  # type
-  #   Bar = object
-  #     value*: uint64
+  # Test complex type vectorization
+  type
+    Bar = object
+      value*: uint64
 
-  #   Foo = object
-  #     value*, value2: int
-  #     fValue* : float
-  #     #tValue*: Time
-  #     #sValue*: string
-  #     rValue*: Bar
-  #     aValue: array[2, Bar]
+    Foo = object
+      value*, value2: int
+      fValue* : float
+      #tValue*: Time
+      #sValue*: string
+      rValue*: Bar
+      aValue: array[2, Bar]
 
-  # assert Bar isnot Vectorizable
-  # assert Foo isnot Vectorizable
+  assert Bar isnot Vectorizable
+  assert Foo isnot Vectorizable
 
-  # type
-  #   WideBar = wide Bar
+  type
+    WideBar = wide Bar
 
-  #   #X = wide array[2, float]
+    WideFoo = wide Foo
 
-  #   Y = wide array[2, Bar]
-  #   WideFoo = wide Foo
-
-  # echo type(WideFoo.fvalue).name
-  # assert (wide float) is SomeWide
-  # assert (wide float) is SomeWide[float, 4]
+  assert (wide float) is SomeWide
+  assert (wide float) is SomeWide[float, 4]
 
   # # Test type reuse
   # var x: WideFoo
