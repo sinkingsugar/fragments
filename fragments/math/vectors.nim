@@ -239,16 +239,16 @@ template `[]`*[T; width: static int](wide: Wide[T, width]; index: int): T =
 template `[]=`*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) =
   wide.elements[index] = value
 
-func equals*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  staticFor(i, SomeWide.laneCount):
+func equals*[T; laneCount: static int](left, right: Wide[T, laneCount]): Wide[bool, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) == right.getLane(i))
 
-func `<=`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  staticFor(i, SomeWide.laneCount):
+func `<=`*[T; laneCount: static int](left, right: Wide[T, laneCount]): Wide[bool, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) <= right.getLane(i))
 
-func `<`*(left, right: SomeWide): Wide[bool, SomeWide.laneCount] {.inline.} =
-  staticFor(i, SomeWide.laneCount):
+func `<`*[T; laneCount: static int](left, right: Wide[T, laneCount]): Wide[bool, laneCount] {.inline.} =
+  staticFor(i, laneCount):
     result.setLane(i, left.getLane(i) < right.getLane(i))
 
 func `and`*[T: bool | SomeInteger, laneCount: static int](left, right: Wide[T, laneCount]): Wide[T, laneCount] {.inline.} =
