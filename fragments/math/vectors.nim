@@ -1,9 +1,9 @@
 import macros, strutils, typetraits, tables, math
 
 type
-  Wide*[T; width: static int] = object
+  Wide*[T; len: static int] = object
     ## A super-scaler primitive type, used in vectorized code
-    elements*: array[width, T]
+    elements*: array[len, T]
 
   SomeWide*[T; width: static int] = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
@@ -20,9 +20,12 @@ type
     # v.getLaneImpl(int) is T
     # m.setLaneImpl(int, T)
 
-  SomeVector* = concept type T of SomeWide
+  SomeVector*[T; width: static int] = concept v, var m, type V
     ## A wide type marked as vector. Vectors automatically support some basic operations.
-    T.isVector()
+    V.isVector()
+    # v[int] is T
+    # m[int] = T
+    # V.len == width
 
   Vectorizable* = concept type S
     ## A type that defines a way to generate a vectorized version by implementing `wideImpl`.
@@ -35,7 +38,7 @@ type
     # W is SomeWide
     # S is scalarType(W)
 
-  TrivialScalar = SomeNumber | enum | bool
+  TrivialScalar* = SomeNumber | enum | bool
 
 template restrict*(arg: untyped): untyped =
   when defined(vcc):
@@ -58,16 +61,23 @@ macro staticFor*(name: untyped; count: static int; body: untyped): untyped =
 # Helpers for mapping scalar operations to wide types
 template makeUniversal*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](value: U): U {.inline.} =
-    staticFor(i, U.laneCount):
-      result.setLane(i, `op`(value.getLane(i)))
+    staticFor(i, U.len):
+      result[i] = `op`(value[i])
 
 template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](left, right: U): U {.inline.} =
-    staticFor(i, U.laneCount):
-      result.setLane(i, `op`(left.getLane(i), right.getLane(i)))
+    staticFor(i, U.len):
+      result[i] = `op`(left[i], right[i])
 
 # Mark the basic wide type as vector
 template isVector*(_: type Wide): bool = true
+
+# Indexing of wide types
+func `[]`*[T; width: static int](wide: Wide[T, width]; index: int): T {.inline.} =
+  wide.elements[index]
+
+func `[]=`*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) {.inline.} =
+  wide.elements[index] = value
 
 # Supported operations for all types marked as vector
 makeUniversal(SomeVector, `-`)
@@ -94,13 +104,12 @@ makeUniversalBinary(Wide, min)
 makeUniversalBinary(Wide, max)
 
 proc clamp*[T: SomeVector](self, min, max: T): T {.noinit, inline.} =
-  staticFor(i, T.laneCount):
-    result.setLane(i, clamp(self.getLane(i), min.getLane(i), max.getLane(i)))
+  staticFor(i, T.len):
+    result[i] = clamp(self[i], min[i], max[i])
 
 func `*` *[T: SomeVector](left: T; right: T.T): T {.inline.} =
-  restrict(left)
-  staticFor(i, T.laneCount):
-    result.setLane(i, left[].getLane(i) * right)
+  staticFor(i, T.len):
+    result[i] = left[i] * right
 
 template `/` *[T: SomeVector](left: T; right: T.T): T =
   left * (T.T)1 / right
@@ -189,7 +198,7 @@ macro setLane*(self: not AnyWide; index: int; value: untyped): untyped =
   error("No setLane proc generated for complex type", self)
 
 # Vectorized version of primitive types
-template isVectorizable(T: type TrivialScalar): bool = true
+template isVectorizable*(T: type TrivialScalar): bool = true
 template wideImpl*(T: type TrivialScalar): untyped = Wide[T, 4]
 template scalarTypeImpl*[T; width: static int](t: type Wide[T, width]): typedesc = T
 template laneCountImpl*[T; width: static int](t: type Wide[T, width]): int = width
@@ -198,7 +207,7 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 
 # Vectorized version of arrays
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
-template isVectorizable(T: type array): bool = true
+template isVectorizable*(T: type array): bool = true
 template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
 template scalarTypeImpl*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
 template laneCountImpl*[size; T](t: type array[size, T]): int = T.laneCount
@@ -231,13 +240,6 @@ func broadcast*(wide: var SomeWide; value: SomeWide.T) {.inline.} =
 iterator lanes*(wide: SomeWide): SomeWide.T {.inline.} =
   for laneIndex in 0..<SomeWide.laneCount:
     yield wide.getLane(laneIndex)
-
-# Indexing of wide types
-template `[]`*[T; width: static int](wide: Wide[T, width]; index: int): T =
-  wide.elements[index]
-
-template `[]=`*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) =
-  wide.elements[index] = value
 
 func equals*[T; laneCount: static int](left, right: Wide[T, laneCount]): Wide[bool, laneCount] {.inline.} =
   staticFor(i, laneCount):
@@ -494,6 +496,8 @@ when isMainModule:
   for x in w.lanes: discard
 
   echo w + v
+
+  assert (wide float) is SomeVector
 
   echo array[10, Wide[float, 4]].scalarType
 
