@@ -7,19 +7,19 @@ type
 
   SomeWide*[T; width: static int] = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
-    V.scalarType is T
+    #V.scalarType is T
     #V.laneCount == width
-    # v.getLaneImpl(int) is T
-    # m.setLaneImpl(int, T)
+    v.getLaneImpl(int) is T
+    m.setLaneImpl(int, T)
 
   SomeWide2* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types
     #type A
     #V.scalarType
-    #V.laneCount == width
+    const width = V.laneCount
     type T = V.scalarType
-    # v.getLaneImpl(int) is T
-    # m.setLaneImpl(int, T)
+    v.getLaneImpl(int) is T
+    m.setLaneImpl(int, T)
 
   SomeVector* = concept type T of SomeWide
     ## A wide type marked as vector. Vectors automatically support some basic operations.
@@ -173,16 +173,17 @@ template getLaneImpl*[T; width: static int](wide: Wide[T, width]; index: int): T
 template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) = wide.elements[index] = value
 
 # Vectorized version of arrays
+# TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
 template isVectorizable*(T: type array): bool = true
 template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
-template scalarType*[T; size, width: static int](t: type array[size, SomeWide[T, width]]): int = array[size, T]
-template laneCount*[T; size, width: static int](t: type array[size, SomeWide[T, width]]): int = width
+template scalarType*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
+template laneCount*[size; T](t: type array[size, T]): int = T.laneCount
 
-func getLaneImpl*[T; size, width: static int](wide: array[size, SomeWide[T, width]]; laneIndex: int): array[size, T] {.inline.} =
-  for i in 0 ..< size:
+func getLaneImpl*[size](wide: array[size, SomeWide2]; laneIndex: int): array[size, SomeWide2.T] {.inline.} =
+  for i in 0 ..< wide.len:
     result[i] = wide[i].getLane(laneIndex)
-func setLaneImpl*[T; size, width: static int](wide: var array[size, SomeWide[T, width]]; laneIndex: int, value: array[size, T]) {.inline.} =
-  for i in 0 ..< size:
+func setLaneImpl*[size](wide: var array[size, SomeWide2]; laneIndex: int, value: array[size, SomeWide2.T]) {.inline.} =
+  for i in 0 ..< wide.len:
     wide[i].setLane(laneIndex, value[i])
 
 # Common operations on vectorized types
@@ -469,7 +470,7 @@ when isMainModule:
   var fa: array[4, float]
   f1 = 1.0
   var w, v: Wide[float, 4]
-  #w.broadcast(f1)
+  w.broadcast(f1)
   echo w.getLane(1)
   echo w[1]
   w.gather(f3, f2, 2.0)
@@ -480,10 +481,16 @@ when isMainModule:
   echo w + v
 
   var a: array[10, Wide[float, 4]]
-  #echo a.getLane(1)
+  echo a.getLane(1)
+
+  echo array[10, Wide[float, 4]].scalarType
 
   echo Wide[float, 4] is SomeWide
+  echo array[10, Wide[float, 4]] is SomeWide
+  echo array[10, float] isnot SomeWide
+  echo Wide[float, 4] is SomeWide2
   echo array[10, Wide[float, 4]] is SomeWide2
+  echo array[10, float] isnot SomeWide2
 
   echo float is Vectorizable
   echo array[4, float] is Vectorizable
