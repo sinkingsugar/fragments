@@ -52,11 +52,6 @@ type
   Matrix4x3* = Matrix[float32, 4, 3]
   Matrix4x4* = Matrix[float32, 4, 4]
 
-  NonScalar*[T] = concept v, var m
-    v.elements[int] is T
-    m.elements[int] = T
-    v.elements.len is int
-
 # Custom vectorization. Vector-like types simply have their members serialized.
 template isVectorizable*(_: type Vector): bool = true
 template wideImpl*[T; size: static int](_: type Vector[T, size]): typedesc = Vector[wide(typeof(T)), size]
@@ -75,15 +70,15 @@ template isVector*(_: type Vector): bool = true
 template len*[T; size: static int](_: type Vector[T, size]): int = size
 
 # Vector, quaternion and matrix subscript
-func `[]`*(self: NonScalar; index: int): NonScalar.T =
-  return self.elements[index]
+func `[]`*[V: Vector | QuaternionBase | Matrix](self: V; index: int): V.T =
+  self.elements[index]
 
-func `[]=`*(self: var NonScalar; index: int; value: NonScalar.T) =
+func `[]=`*[V: Vector | QuaternionBase | Matrix](self: var V; index: int; value: V.T) =
   self.elements[index] = value
 
 # Matrix subscript
 func `[]`*(self: Matrix; row, column: int): Matrix.T =
-  return self.elements[row * Matrix.width + column]
+  self.elements[row * Matrix.width + column]
 
 func `[]=`*(self: var Matrix; row, column: int; value: Matrix.T) =
   self.elements[row * Matrix.width + column] = value
@@ -320,8 +315,6 @@ template `/` *(left: QuaternionBase; right: QuaternionBase.T): QuaternionBase =
   left * (QuaternionBase.T)1 / right
 
 func dot*(left, right: Vector): Vector.T =
-  restrict(left)
-  restrict(right)
   for i in 0..<Vector.size:
     result += left[i] * right[i]
 
@@ -732,8 +725,8 @@ when isMainModule:
   echo q.toMatrix().toQuaternion()
 
   block:
-    var a, b: Vector[Wide[float, 4], 3]
-    #echo a + b
+    var a, b: Vector3Wide
+    echo a + b
 
 type
   Color3* = distinct Vector3
