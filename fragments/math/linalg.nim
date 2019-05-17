@@ -648,7 +648,7 @@ func perspectiveFov*[T](fov, aspect, near, far: T): Matrix[T, 4, 4] =
   
   return perspectiveOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far)
 
-func orhographicOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
+func orthographicOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T, 4, 4] =
 
   let zRange = 1.T / (far - near)
   result.m00 = 2.T / (right - left)
@@ -659,12 +659,12 @@ func orhographicOffCenter*[T](left, right, bottom, top, near, far: T): Matrix[T,
   result.m32 = -near * zRange
   result.m33 = 1.T
 
-func orhographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
+func orthographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
   let
     halfWidth = (T)0.5 * width
     halfHeight = (T)0.5 * height
 
-  return orhographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
+  return orthographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
 
 func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
 
