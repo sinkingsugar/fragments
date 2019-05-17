@@ -146,7 +146,7 @@ var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
 proc generateWideType(T: NimNode): VectorizedTypeInfo
 
-template wide*(T: typedesc[Vectorizable]): typedesc =
+template wide*(T: typedesc[Vectorizable]): untyped =
   wideImpl(T)
 
 template scalarType*(T: typedesc AnyWide): typedesc =
@@ -161,25 +161,26 @@ template getLane*(self: AnyWide; index: int): untyped =
 template setLane*(self: var AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
-macro wideInternal(T: typedesc): untyped =
+macro wideInternal(T: untyped): untyped =
+  #echo T.getTypeInst().astgenrepr
   let typeInfo = generateWideType(T.getTypeInst())
   result = newStmtList()
   result.add(typeInfo.definition)
   result.add(typeInfo.symbol)
 
-template wide*(T: typedesc[not Vectorizable]): typedesc =
-  wideInternal(T)
+template wide*(T: typedesc[not Vectorizable]): untyped =
+  # TODO: Returning the following as typedesc works too, but causes VM-issues. Returning it as untyped does not work somehow
+  #wideInternal(T)
+  typeof((var x: wideInternal(T); x))
 
 macro scalarType*(T: typedesc[not AnyWide]): untyped =
   for typeInfo in vectorizedTypes:
-    echo typeInfo.wideType.getTypeInst.repr
     # TODO: getTypeInst are not the same?
     if T.getTypeInst()[1].getType().sameType(typeInfo.wideType.getType()):
       return typeinfo.scalarType
 
 macro laneCount*(T: typedesc[not AnyWide]): untyped =
   for typeInfo in vectorizedTypes:
-    echo typeInfo.wideType.getTypeInst.repr
     # TODO: getTypeInst are not the same?
     if T.getTypeInst()[1].getType().sameType(typeInfo.wideType.getType()):
       return newLit(typeInfo.width)
@@ -200,7 +201,7 @@ macro setLane*(self: var (not AnyWide); index: int; value: untyped): untyped =
 # Vectorized version of primitive types
 template isVectorizable*(T: type TrivialScalar): bool = true
 template wideImpl*(T: type TrivialScalar): untyped = Wide[T, 4]
-template scalarTypeImpl*[T; width: static int](t: type Wide[T, width]): typedesc = T
+template scalarTypeImpl*[T; width: static int](t: type Wide[T, width]): untyped = T
 template laneCountImpl*[T; width: static int](t: type Wide[T, width]): int = width
 template getLaneImpl*[T; width: static int](wide: Wide[T, width]; index: int): T = wide.elements[index]
 template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int; value: T) = wide.elements[index] = value
@@ -209,7 +210,7 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
 template isVectorizable*(T: type array): bool = true
 template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
-template scalarTypeImpl*[size; T](t: type array[size, T]): typedesc = array[size, T.scalarType]
+template scalarTypeImpl*[size; T](t: type array[size, T]): untyped = array[size, T.scalarType]
 template laneCountImpl*[size; T](t: type array[size, T]): int = T.laneCount
 
 func getLaneImpl*[size; T](wide: array[size, T]; laneIndex: int): auto {.inline.} =
@@ -447,8 +448,6 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
     # TODO: Should distinct introspect object types? Should it handle trivial types differently?
     #of ntyDistinct, ntyEnum, ntyFloat, ...:
     else:
-      echo repr T
-      echo T.typekind
       error("Don't know how to vectorize type.", T)
 
 proc generateWideType(T: NimNode): VectorizedTypeInfo =
@@ -463,7 +462,6 @@ proc generateWideType(T: NimNode): VectorizedTypeInfo =
   if T.typeKind == ntyTypeDesc:
     owner = T[0].owner
   else:
-    echo T.typekind, " ", repr T
     owner = newEmptyNode()
 
   while owner.kind == nnkSym:
