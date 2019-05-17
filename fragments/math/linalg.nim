@@ -58,28 +58,66 @@ type
 # Custom vectorization. Vector-like types simply have their members serialized.
 template isVectorizable*(_: type Vector): bool = true
 template wideImpl*[T; size: static int](_: type Vector[T, size]): typedesc = Vector[wide(typeof(T)), size]
-
-template isVectorizable*(_: type QuaternionBase): bool = true
-template wideImpl*[T](_: type QuaternionBase[T]): typedesc = QuaternionBase[wide(typeof(T))]
-
-template isVectorizable*(_: type Matrix): bool = true
-template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
-
-template isVectorizable*(_: type SymmetricMatrix): bool = true
-template wideImpl*[T; size: static int](_: type SymmetricMatrix[T, size]): typedesc = SymmetricMatrix[wide(typeof(T)), size]
-
 template scalarTypeImpl*[T; size: static int](t: type Vector[T, size]): typedesc = Vector[T.scalarType, size]
 template laneCountImpl*[T; size: static int](t: type Vector[T, size]): int = T.laneCount
 
 func getLaneImpl*[size; T](self: Vector[T, size]; laneIndex: int): auto {.inline.} =
   var r: Vector[T.scalarType, size]
-  for i in 0 ..< size:
+  for i in 0 ..< self.elements.len:
     r.elements[i] = self.elements[i].getLane(laneIndex)
   return r
 
 func setLaneImpl*[size; T; S](self: var Vector[T, size]; laneIndex: int; value: Vector[S, size]) {.inline.} =
   when S isnot T.scalarType: {.error.}
+  for i in 0 ..< self.elements.len:
+    self.elements[i].setLane(laneIndex, value.elements[i])
+
+template isVectorizable*(_: type QuaternionBase): bool = true
+template wideImpl*[T](_: type QuaternionBase[T]): typedesc = QuaternionBase[wide(typeof(T))]
+template scalarTypeImpl*[T](t: type QuaternionBase[T]): typedesc = QuaternionBase[T.scalarType]
+template laneCountImpl*[T](t: type QuaternionBase[T]): int = T.laneCount
+
+func getLaneImpl*[T](self: QuaternionBase[T]; laneIndex: int): auto {.inline.} =
+  var r: QuaternionBase[T.scalarType]
+  for i in 0 ..< self.elements.len:
+    r.elements[i] = self.elements[i].getLane(laneIndex)
+  return r
+
+func setLaneImpl*[T; S](self: var QuaternionBase[T]; laneIndex: int; value: QuaternionBase[S]) {.inline.} =
+  when S isnot T.scalarType: {.error.}
+  for i in 0 ..< self.elements.len:
+    self.elements[i].setLane(laneIndex, value.elements[i])
+
+template isVectorizable*(_: type Matrix): bool = true
+template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
+template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, size]
+template laneCountImpl*[T; height, width: static int](t: type Matrix[T, height, width]): int = T.laneCount
+
+func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): auto {.inline.} =
+  var r: Matrix[T.scalarType, height, width]
   for i in 0 ..< size:
+    r.elements[i] = self.elements[i].getLane(laneIndex)
+  return r
+
+func setLaneImpl*[height, width; T; S](self: var Matrix[T, height, width]; laneIndex: int; value: Matrix[S, height, width]) {.inline.} =
+  when S isnot T.scalarType: {.error.}
+  for i in 0 ..< self.elements.len:
+    self.elements[i].setLane(laneIndex, value.elements[i])    
+
+template isVectorizable*(_: type SymmetricMatrix): bool = true
+template wideImpl*[T; size: static int](_: type SymmetricMatrix[T, size]): typedesc = SymmetricMatrix[wide(typeof(T)), size]
+template scalarTypeImpl*[T; size: static int](t: type SymmetricMatrix[T, size]): typedesc = SymmetricMatrix[T.scalarType, size]
+template laneCountImpl*[T; size: static int](t: type SymmetricMatrix[T, size]): int = T.laneCount
+
+func getLaneImpl*[size; T](self: SymmetricMatrix[T, size]; laneIndex: int): auto {.inline.} =
+  var r: SymmetricMatrix[T.scalarType, size]
+  for i in 0 ..< self.elements.len:
+    r.elements[i] = self.elements[i].getLane(laneIndex)
+  return r
+
+func setLaneImpl*[size; T; S](self: var SymmetricMatrix[T, size]; laneIndex: int; value: SymmetricMatrix[S, size]) {.inline.} =
+  when S isnot T.scalarType: {.error.}
+  for i in 0 ..< self.elements.len:
     self.elements[i].setLane(laneIndex, value.elements[i])
 
 # Vectors inherit universal pointwise ops
