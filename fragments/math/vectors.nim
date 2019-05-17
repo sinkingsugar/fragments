@@ -9,8 +9,8 @@ type
     ## The contract for super-scalar versions of complex types
     V.scalarTypeImpl is T
     V.laneCountImpl == width
-    v.getLaneImpl(int) is T
-    m.setLaneImpl(int, T)
+    # v.getLaneImpl(int) is T
+    # m.setLaneImpl(int, T)
 
   AnyWide* = concept v, var m, type V
     ## The contract for super-scalar versions of complex types

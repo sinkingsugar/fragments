@@ -742,8 +742,11 @@ when isMainModule:
   echo q.toMatrix().toQuaternion()
 
   block:
-    var a, b: Vector3Wide
+    var
+      a, b: Vector3Wide
+      c: wide bool
     echo a + b
+    echo c.select(a, b)
 
 type
   Color3* = distinct Vector3
