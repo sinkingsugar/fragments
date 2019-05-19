@@ -93,11 +93,9 @@ template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height
 template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, size]
 template laneCountImpl*[T; height, width: static int](t: type Matrix[T, height, width]): int = T.laneCount
 
-func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): auto {.inline.} =
-  var r: Matrix[T.scalarType, height, width]
-  for i in 0 ..< size:
-    r.elements[i] = self.elements[i].getLane(laneIndex)
-  return r
+func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): Matrix[T.scalarType, height, width] {.inline.} =
+  for i in 0 ..< self.elements.len:
+    result.elements[i] = self.elements[i].getLane(laneIndex)
 
 func setLaneImpl*[height, width; T; S](self: var Matrix[T, height, width]; laneIndex: int; value: Matrix[S, height, width]) {.inline.} =
   when S isnot T.scalarType: {.error.}
