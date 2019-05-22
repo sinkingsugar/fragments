@@ -90,12 +90,14 @@ func setLaneImpl*[T; S](self: var QuaternionBase[T]; laneIndex: int; value: Quat
 
 template isVectorizable*(_: type Matrix): bool = true
 template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
-template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, size]
+template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, width, height]
 template laneCountImpl*[T; height, width: static int](t: type Matrix[T, height, width]): int = T.laneCount
 
-func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): Matrix[T.scalarType, height, width] {.inline.} =
+func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): auto {.inline.} =
+  var r: Matrix[T.scalarType, height, width]
   for i in 0 ..< self.elements.len:
-    result.elements[i] = self.elements[i].getLane(laneIndex)
+    r.elements[i] = self.elements[i].getLane(laneIndex)
+  return r
 
 func setLaneImpl*[height, width; T; S](self: var Matrix[T, height, width]; laneIndex: int; value: Matrix[S, height, width]) {.inline.} =
   when S isnot T.scalarType: {.error.}
