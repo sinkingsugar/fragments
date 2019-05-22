@@ -375,7 +375,8 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
       let fieldDef = fieldDefs[i]
       let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
 
-      newFieldDefs.add(newFieldDef)
+      # TODO: Match the original postfix
+      newFieldDefs.add(nnkPostfix.newTree(ident"*", newFieldDef))
 
       # Generate a lane getter and setter for each field
       getters.add(quote do: `resultSym`.`fieldIdent` = `selfSym`.`fieldIdent`.getLane(`laneIndexSym`))
