@@ -27,9 +27,11 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
     let (text, errorCode) = gorgeEx("nim cpp -f -o:" & outputFile & " " & checkFile)
 
   if errorCode != 0:
-    return (text, errorCode)
+    return quote do:
+      (`text`, `errorCode`)
 
-  let res = gorge(outputFile)
+  let res = quote do:
+    (gorge(`outputFile`), 0)
 
   when defined windows:
     discard gorge "del " & checkFile
@@ -38,7 +40,7 @@ macro buildAndRun*(body: untyped): tuple[output: string; exitCode: int] =
     discard gorge "rm " & checkFile
     discard gorge "rm " & outputFile
 
-  return (res, 0)
+  return res
 
 when isMainModule:
   let helloWorld {.compiletime.} = buildAndRun:
