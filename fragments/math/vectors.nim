@@ -433,10 +433,6 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
       return vectorizedType
 
   case T.typeKind:
-    of ntyTypeDesc:
-      # A typedesc is a backet expression, wrapping another type
-      return context.makeWideTypeRecursive(T[1])
-
     of ntyGenericInvocation:
       # Generic invocations are bracket expressions. We vectorize the generic type and return a matching invocation of it.
       # We pass the full nnkTypeDef, so we can replace the generic params.
@@ -449,7 +445,7 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
     # TODO: Should distinct introspect object types? Should it handle trivial types differently?
     #of ntyDistinct, ntyEnum, ntyFloat, ...:
     else:
-      error("Don't know how to vectorize type.", T)
+      error("Don't know how to vectorize type: " & T.repr, T)
 
 proc generateWideType(T: NimNode): VectorizedTypeInfo =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
@@ -472,7 +468,7 @@ proc generateWideType(T: NimNode): VectorizedTypeInfo =
       break
     owner = owner.owner
   
-  let rootType = context.makeWideTypeRecursive(typeDesc)
+  let rootType = context.makeWideTypeRecursive(typeDesc[1])
 
   result.definition = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
   result.definition.add(context.generatedProcs)
