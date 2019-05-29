@@ -428,18 +428,18 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
 proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): VectorizedType {.compileTime.} =
 
   for vectorizedType in vectorizedTypes:
-    if T.sameType(vectorizedType.scalarType) and
+    # TODO: Check: We don't ever register typedescs, but nodes sometimes change typekind! For now we strip it again...
+    var knownType = vectorizedType.scalarType
+    if knownType.typekind == ntyTypeDesc:
+      knownType = knownType.gettypeInst()[1]
+
+    if T.sameType(knownType) and
       vectorizedType.width == 4:
       #echo "Reused type: " & (repr vectorizedType.scalarType) & " --> " & (repr vectorizedType.wideType)
       return vectorizedType
 
   case T.typeKind:
-    of ntyGenericInvocation:
-      # Generic invocations are bracket expressions. We vectorize the generic type and return a matching invocation of it.
-      # We pass the full nnkTypeDef, so we can replace the generic params.
-      return context.makeWideComplexType(T[0].getTypeImpl())
-      
-    of ntyGenericInst, ntyObject, ntyTuple:
+    of ntyGenericInvocation, ntyGenericInst, ntyObject, ntyTuple:
       # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
       return context.makeWideComplexType(T)
 
