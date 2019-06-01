@@ -59,12 +59,12 @@ macro staticFor*(name: untyped; count: static int; body: untyped): untyped =
   #     `body`
 
 # Helpers for mapping scalar operations to wide types
-template makeUniversal*(T: typedesc[SomeVector], op: untyped): untyped =
+template makeUniversal*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](value: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(value[i])
 
-template makeUniversalBinary*(T: typedesc[SomeVector], op: untyped): untyped =
+template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](left, right: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(left[i], right[i])
