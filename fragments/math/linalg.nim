@@ -515,9 +515,9 @@ func `*` *[T; height, width, count: static int](
       for i in 0..<count:
         result[r, c] = result[r, c] + left[][r, i] * right[][i, c]
 
-func transpose*(self: Matrix): Matrix =
-  for r in 0 ..< self.height:
-    for c in 0 ..< self.width:
+func transpose*[T; height, width: static int](self: Matrix[T, height, width]): Matrix[T, width, height] =
+  for r in 0 ..< height:
+    for c in 0 ..< width:
       result[r, c] = self[c, r]
 
 func translation*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
