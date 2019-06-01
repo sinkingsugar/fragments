@@ -89,8 +89,8 @@ func setLaneImpl*[T; S](self: var QuaternionBase[T]; laneIndex: int; value: Quat
     self.elements[i].setLane(laneIndex, value.elements[i])
 
 template isVectorizable*(_: type Matrix): bool = true
-template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
-template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, width, height]
+template wideImpl*[T; height, width: static int](_: type Matrix[T, height, width]): typedesc = Matrix[wide(typeof(T)), height, width]
+template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, height, width]
 template laneCountImpl*[T; height, width: static int](t: type Matrix[T, height, width]): int = T.laneCount
 
 func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): auto {.inline.} =
