@@ -135,7 +135,6 @@ type
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
     symbolMap: seq[(NimNode, NimNode)]
-    isLocal: bool
 
 var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
@@ -430,25 +429,8 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
 proc generateWideType(T: NimNode): NimNode =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   
-  let typeDesc = T.getTypeInst()
   var context: WideBuilderContext
-
-  # Check the ancestor of the typedesc. If we are inside some proc we can't export any
-  # generated symbols.
-  var owner: NimNode
-  if T.typeKind == ntyTypeDesc:
-    owner = T[0].owner
-  else:
-    owner = newEmptyNode()
-
-  while owner.kind == nnkSym:
-    #echo astgenrepr owner, owner.symKind
-    if owner.symKind in { nskProc, nskFunc, nskMethod, nskIterator, nskConverter }:
-      context.isLocal = true
-      break
-    owner = owner.owner
-  
-  let rootType = context.makeWideTypeRecursive(typeDesc[1])
+  let rootType = context.makeWideTypeRecursive(T[1])
 
   result = newStmtList(
     newStmtList(nnkTypeSection.newTree(context.generatedTypes)),
