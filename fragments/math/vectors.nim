@@ -131,12 +131,6 @@ type
     getLane: NimNode
     setLane: NimNode
 
-  VectorizedTypeInfo = object
-    definition: NimNode
-    symbol: NimNode
-    getLane: NimNode
-    setLane: NimNode
-
   WideBuilderContext = object
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
@@ -145,7 +139,7 @@ type
 
 var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
-proc generateWideType(T: NimNode): VectorizedTypeInfo
+proc generateWideType(T: NimNode): NimNode
 
 template wide*(T: typedesc[Vectorizable]): untyped =
   wideImpl(T)
@@ -162,17 +156,8 @@ template getLane*(self: AnyWide; index: int): untyped =
 template setLane*(self: var AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
-macro wideInternal(T: untyped): untyped =
-  #echo T.getTypeInst().astgenrepr
-  let typeInfo = generateWideType(T.getTypeInst())
-  result = newStmtList()
-  result.add(typeInfo.definition)
-  result.add(typeInfo.symbol)
-
-template wide*(T: typedesc[not Vectorizable]): untyped =
-  # TODO: Returning the following as typedesc works too, but causes VM-issues. Returning it as untyped does not work somehow
-  #wideInternal(T)
-  typeof((var x: wideInternal(T); x))
+macro wide*(T: typedesc[not Vectorizable]): untyped =
+  generateWideType(T.getTypeInst())
 
 macro scalarType*(T: typedesc[not AnyWide]): untyped =
   for typeInfo in vectorizedTypes:
@@ -210,7 +195,9 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 # Vectorized version of arrays
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
 template isVectorizable*(T: type array): bool = true
-template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
+template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped =
+  type E = wide(typeof(T)) # Using the type expression directly causes 'type expected' 
+  array[size, E]
 template scalarTypeImpl*[size; T](t: type array[size, T]): untyped = array[size, T.scalarType]
 template laneCountImpl*[size; T](t: type array[size, T]): int = T.laneCount
 
@@ -298,55 +285,39 @@ func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
 
   return node
 
-proc copyFieldDef(node: NimNode): tuple[root, ident: NimNode] =
-  node.expectKind({nnkIdent, nnkSym, nnkPragmaExpr, nnkPostfix})
+proc replaceSyms(node: NimNode): NimNode =
   case node.kind:
-    of nnkIdent:
-      return (node, node)
-    of nnkSym:
-      let ident = ident($node)
-      return (ident, ident)
-    of nnkPostfix:
-      result.root = node.copy()
-      let (root, ident) = result.root[1].copyFieldDef()
-      result.root[1] = root
-      result.ident = ident
-    of nnkPragmaExpr:
-      result.root = node.copy()
-      let (root, ident) = result.root[0].copyFieldDef()
-      result.root[0] = root
-      result.ident = ident
-    else: discard
+    of nnkSym, nnkOpenSymChoice, nnkClosedSymChoice:
+      return ident($node)
+    else:
+      result = node.copy()
+      for i in 0 ..< node.len:
+        result[i] = result[i].replaceSyms()
 
 proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): VectorizedType {.compileTime.} =
   
-  var
-    scalarTypeName: NimNode
-    scalarImpl: NimNode
-    wideGenericParams = newEmptyNode()
+  var wideGenericParams = newEmptyNode()
 
   # For a typedef, we refer to the scalarType with it's symbol. We also take it's implementation from the typedef.
   # This is the case for generic type instantiations.
-  if T.kind == nnkTypeDef:
-    scalarTypeName = T[0]
-    scalarImpl = T[2]
+  if T.typeKind == ntyGenericBody:
+    let typeDef = T.getImpl()
 
-    if T[1].kind != nnkEmpty:
+    if typeDef[1].kind != nnkEmpty:
       wideGenericParams = nnkGenericParams.newTree()
-      for scalarParam in T[1]:
+      for scalarParam in typeDef[1]:
         scalarParam.expectKind(nnkSym) # TODO: Why is this not nnkIdentDefs?
-        let t = quote do:
-          type(`scalarParam`)
-        let wideParam = genSym(nskGenericParam, scalarParam.repr)
-        wideGenericParams.add(nnkIdentDefs.newTree(wideParam, t, newEmptyNode()))
+        let wideParam = genSym(scalarParam.symKind, scalarParam.repr)
+        let scalarParamType = nnkTypeOfExpr.newTree(scalarParam)
+        wideGenericParams.add(nnkIdentDefs.newTree(wideParam, scalarParamType, newEmptyNode()))
         context.symbolMap.add((scalarParam, wideParam))
 
   # Otherwise, T might be a symbol or another simple type expression. We refer to it using this expression.
   # We get a nnkObjectType/etc. with getTypeImpl()
-  else:
+  
+  let
     scalarTypeName = T
     scalarImpl = T.getTypeImpl()
-    #wideGenericParams = newEmptyNode()
   
   # TODO: Handle refs, base types, etc.
   scalarImpl.expectKind({ nnkObjectTy, nnkTupleTy })
@@ -374,7 +345,9 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
 
       # Create a copy of each field declaration
       let fieldDef = fieldDefs[i]
-      let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
+      #let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
+      let newFieldDef = fieldDef.replaceSyms()
+      let fieldIdent = ident($newFieldDef)
 
       # TODO: Match the original postfix
       newFieldDefs.add(nnkPostfix.newTree(ident"*", newFieldDef))
@@ -439,7 +412,13 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
       return vectorizedType
 
   case T.typeKind:
-    of ntyGenericInvocation, ntyGenericInst, ntyObject, ntyTuple:
+    of ntyGenericInvocation:
+      result = context.makeWideTypeRecursive(T[0])
+      var invocation = T.copy()
+      invocation[0] = result.wideType
+      result.wideType = invocation
+
+    of ntyGenericInst, ntyGenericBody, ntyObject, ntyTuple:
       # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
       return context.makeWideComplexType(T)
 
@@ -448,7 +427,7 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
     else:
       error("Don't know how to vectorize type: " & T.repr, T)
 
-proc generateWideType(T: NimNode): VectorizedTypeInfo =
+proc generateWideType(T: NimNode): NimNode =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   
   let typeDesc = T.getTypeInst()
@@ -471,11 +450,10 @@ proc generateWideType(T: NimNode): VectorizedTypeInfo =
   
   let rootType = context.makeWideTypeRecursive(typeDesc[1])
 
-  result.definition = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
-  result.definition.add(context.generatedProcs)
-  result.symbol = rootType.wideType
-  result.setLane = rootType.setLane
-  result.getLane = rootType.getLane
+  result = newStmtList(
+    newStmtList(nnkTypeSection.newTree(context.generatedTypes)),
+    newStmtList(context.generatedProcs),
+    rootType.wideType)
 
 when isMainModule:
   # Test super scalar concept
