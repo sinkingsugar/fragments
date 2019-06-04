@@ -134,7 +134,6 @@ type
   WideBuilderContext = object
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
-    symbolMap: seq[(NimNode, NimNode)]
 
 var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
@@ -273,17 +272,6 @@ func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[
     r.setLane(i, value) # TODO: Why does this not work directly on result?
   return r
 
-func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
-  if node.kind == nnkSym:
-    for sym in context.symbolMap:
-      if node == sym[0]:
-        return sym[1]
-  else:
-    for i in 0 ..< node.len:
-      node[i] = node[i].replaceSymbols(context)
-
-  return node
-
 proc replaceSyms(node: NimNode): NimNode =
   case node.kind:
     of nnkSym, nnkOpenSymChoice, nnkClosedSymChoice:
@@ -297,23 +285,6 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
   
   var wideGenericParams = newEmptyNode()
 
-  # For a typedef, we refer to the scalarType with it's symbol. We also take it's implementation from the typedef.
-  # This is the case for generic type instantiations.
-  if T.typeKind == ntyGenericBody:
-    let typeDef = T.getImpl()
-
-    if typeDef[1].kind != nnkEmpty:
-      wideGenericParams = nnkGenericParams.newTree()
-      for scalarParam in typeDef[1]:
-        scalarParam.expectKind(nnkSym) # TODO: Why is this not nnkIdentDefs?
-        let wideParam = genSym(scalarParam.symKind, scalarParam.repr)
-        let scalarParamType = nnkTypeOfExpr.newTree(scalarParam)
-        wideGenericParams.add(nnkIdentDefs.newTree(wideParam, scalarParamType, newEmptyNode()))
-        context.symbolMap.add((scalarParam, wideParam))
-
-  # Otherwise, T might be a symbol or another simple type expression. We refer to it using this expression.
-  # We get a nnkObjectType/etc. with getTypeImpl()
-  
   let
     scalarTypeName = T
     scalarImpl = T.getTypeImpl()
