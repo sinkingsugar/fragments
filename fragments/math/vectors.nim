@@ -156,7 +156,7 @@ template setLane*(self: var AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
 macro wide*(T: typedesc[not Vectorizable]): untyped =
-  generateWideType(T.getTypeInst())
+  nnkTypeOfExpr.newTree generateWideType(T.getTypeInst())
 
 macro scalarType*(T: typedesc[not AnyWide]): untyped =
   for typeInfo in vectorizedTypes:
