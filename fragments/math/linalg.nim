@@ -929,3 +929,21 @@ func contains*(box: BoundingBox; point: Vector3): bool =
 
 func intersects*(a, b: BoundingBox): bool =
   all(a.maximum >= b.minimum) and all(b.maximum >= a.minimum)
+
+proc projectionFrustum*(matrix: Matrix4x4): BoundingFrustum =
+  # See: http://www8.cs.umu.se/kurser/5DV051/HT12/lab/plane_extraction.pdf
+  let c3 = matrix.m03m13m23m33
+ 
+  for face, plane in result.planes.mpairs:
+    var coefficients: Vector4
+
+    case face:
+      of Left: coefficients = c3 + matrix.m00m10m20m30
+      of Right: coefficients = c3 - matrix.m00m10m20m30
+      of Bottom: coefficients = c3 + matrix.m01m11m21m31
+      of Top: coefficients = c3 - matrix.m01m11m21m31
+      of Near: coefficients = matrix.m02m12m22m32
+      of Far: coefficients = c3 - matrix.m02m12m22m32
+      
+    let length = coefficients.xyz.length()
+    plane = Plane(normal: coefficients.xyz / length, distance: coefficients.w / length)
