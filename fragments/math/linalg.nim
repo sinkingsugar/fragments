@@ -722,7 +722,7 @@ func orthographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
     halfWidth = (T)0.5 * width
     halfHeight = (T)0.5 * height
 
-  return orthographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
+  return orthographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far)
 
 func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
 
