@@ -383,12 +383,10 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
 
   case T.typeKind:
     of ntyGenericInvocation:
-      result = context.makeWideTypeRecursive(T[0])
-      var invocation = T.copy()
-      invocation[0] = result.wideType
-      result.wideType = invocation
+      # We need a concrete type for vectorization. Otherwise the vector-width can't be inferred.
+      error("'wide' only supports concrete types.", T)
 
-    of ntyGenericInst, ntyGenericBody, ntyObject, ntyTuple:
+    of ntyGenericInst, ntyObject, ntyTuple: # ntyGenericBody
       # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
       return context.makeWideComplexType(T)
 
