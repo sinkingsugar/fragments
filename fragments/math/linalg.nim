@@ -288,7 +288,7 @@ func getMatrixSwizzles(swizzle: string): seq[(int, int)] {.compileTime.} =
     assert(swizzle[i] == 'm' and swizzle[i + 1].isDigit and swizzle[i + 2].isDigit, "'" & swizzle & "' is not a valid matrix swizzling pattern")
     result.add((parseInt($swizzle[i + 1]), parseInt($swizzle[i + 2])))
 
-macro `.`*(self: Matrix; swizzle: untyped): untyped =
+macro `.`*(self: Matrix | SymmetricMatrix; swizzle: untyped): untyped =
   var
     indices = getMatrixSwizzles($swizzle)
     cardinality = indices.len
@@ -315,7 +315,7 @@ macro `.`*(self: Matrix; swizzle: untyped): untyped =
       toVector[`temp`.T, `cardinality`](`values`)
 
 # Assumes `[]` and `[]=` operators on matrices
-macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
+macro `.=`*(self: var Matrix | SymmetricMatrix; swizzle: untyped; value: untyped): untyped =
   var
     indices = getMatrixSwizzles($swizzle)
     cardinality = indices.len
@@ -479,7 +479,7 @@ func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4
   let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
 
-func transform*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 3, 3]): Vector[T, 3] =
+func transform*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 3, 3] | SymmetricMatrix[T, 3]): Vector[T, 3] =
   (transform.m00m01m02 * coordinate.x) + (transform.m10m11m12 * coordinate.y) + (transform.m20m21m22 * coordinate.z)
 
 func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T, 3] =
@@ -568,6 +568,12 @@ func changeBasis*[T; innerSize, outerSize: static int](
         for j in 0 ..< innerSize:
           result.elements[k] += basis[i, r] * basis[j, c] * self[i, j]
       inc k
+
+func changeBasis*[T; size: static int](
+  self: Matrix[T, size, size] | SymmetricMatrix[T, size];
+  v: Vector[T, size]): T =
+
+  dot(v.transform(self), v)
 
 func dot*[T; height, width: static int](self: Matrix[T, height, width]): SymmetricMatrix[T, width] =
   # TODO: Better name
