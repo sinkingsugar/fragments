@@ -154,7 +154,7 @@ proc switchTo*(current, to: CoroutinePtr) =
   ## Switches execution from `current` into `to` context.
   to.lastRun = getTicks()
   # Update position of current stack so gc invoked from another stack knows how much to scan.
-  # var frame = getFrameState()
+  var frame = getFrameState()
   block:
     # Execution will switch to another fiber now. We do not need to update current stack
     when coroBackend == CORO_BACKEND_FIBERS:
@@ -177,7 +177,7 @@ proc switchTo*(current, to: CoroutinePtr) =
     else:
       {.error: "Invalid coroutine backend set.".}
   # Execution was just resumed. Restore frame information and set active stack.
-  # setFrameState(frame)
+  setFrameState(frame)
 
 proc suspend*(sleepTime: float=0) =
   ## Stops coroutine execution and resumes no sooner than after ``sleeptime`` seconds.
@@ -205,7 +205,7 @@ proc runCurrentTask() =
       echo "Unhandled exception in coroutine."
       writeStackTrace()
     current.state = CORO_FINISHED
-  suspend(0)                      # Exit coroutine without returning from coroExecWithStack()
+  suspend(0)
   doAssert false
 
 proc start*(c: proc(), stacksize: int=defaultStackSize): CoroutinePtr =
@@ -229,6 +229,13 @@ proc start*(c: proc(), stacksize: int=defaultStackSize): CoroutinePtr =
   coro.state = CORO_CREATED
   return coro
 
+proc cleanup*(c: CoroutinePtr) =
+  when coroBackend == CORO_BACKEND_FIBERS:
+    DeleteFiber(c.execContext)
+  else:
+    dealloc(c.stack.top)
+  dealloc(c)
+
 proc runOnce*() =
   switchTo(addr mainCoro, currentCoro)
 
@@ -244,13 +251,18 @@ when isMainModule:
   init()
 
   var
+    running = true
     c1 = start(proc() =
-      while true:
+      while running:
         echo "Hello"
         suspend(1)
+      echo "Done"
     )
   
   setCurrent(c1)
   runOnce()
   runOnce()
-  
+  running = false
+  runOnce()
+  cleanup(c1)
+  echo "Deleted"
