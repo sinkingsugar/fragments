@@ -59,12 +59,12 @@ macro staticFor*(name: untyped; count: static int; body: untyped): untyped =
   #     `body`
 
 # Helpers for mapping scalar operations to wide types
-template makeUniversal*(T: typedesc[SomeVector], op: untyped): untyped =
+template makeUniversal*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](value: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(value[i])
 
-template makeUniversalBinary*(T: typedesc[SomeVector], op: untyped): untyped =
+template makeUniversalBinary*(T: typedesc, op: untyped): untyped =
   proc `op`*[U: T](left, right: U): U {.inline.} =
     staticFor(i, U.len):
       result[i] = `op`(left[i], right[i])
@@ -94,6 +94,7 @@ makeUniversalBinary(SomeVector, `xor`)
 makeUniversal(SomeVector, abs)
 makeUniversal(SomeVector, floor)
 makeUniversal(SomeVector, ceil)
+makeUniversal(SomeVector, sqrt)
 makeUniversal(SomeVector, exp)
 makeUniversal(SomeVector, tanh)
 makeUniversalBinary(SomeVector, pow)
@@ -130,21 +131,13 @@ type
     getLane: NimNode
     setLane: NimNode
 
-  VectorizedTypeInfo = object
-    definition: NimNode
-    symbol: NimNode
-    getLane: NimNode
-    setLane: NimNode
-
   WideBuilderContext = object
     generatedTypes: seq[NimNode]
     generatedProcs: seq[NimNode]
-    symbolMap: seq[(NimNode, NimNode)]
-    isLocal: bool
 
 var vectorizedTypes {.compileTime.}: seq[VectorizedType]
 
-proc generateWideType(T: NimNode): VectorizedTypeInfo
+proc generateWideType(T: NimNode): NimNode
 
 template wide*(T: typedesc[Vectorizable]): untyped =
   wideImpl(T)
@@ -161,17 +154,8 @@ template getLane*(self: AnyWide; index: int): untyped =
 template setLane*(self: var AnyWide; index: int; value: untyped): untyped =
   self.setLaneImpl(index, value)
 
-macro wideInternal(T: untyped): untyped =
-  #echo T.getTypeInst().astgenrepr
-  let typeInfo = generateWideType(T.getTypeInst())
-  result = newStmtList()
-  result.add(typeInfo.definition)
-  result.add(typeInfo.symbol)
-
-template wide*(T: typedesc[not Vectorizable]): untyped =
-  # TODO: Returning the following as typedesc works too, but causes VM-issues. Returning it as untyped does not work somehow
-  #wideInternal(T)
-  typeof((var x: wideInternal(T); x))
+macro wide*(T: typedesc[not Vectorizable]): untyped =
+  nnkTypeOfExpr.newTree generateWideType(T.getTypeInst())
 
 macro scalarType*(T: typedesc[not AnyWide]): untyped =
   for typeInfo in vectorizedTypes:
@@ -209,7 +193,9 @@ template setLaneImpl*[T; width: static int](wide: var Wide[T, width]; index: int
 # Vectorized version of arrays
 # TODO: Constraining size to `static int`, or constrainting T to `SomeWide` seems to cause issues here
 template isVectorizable*(T: type array): bool = true
-template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped = array[size, wide(typeof(T))]
+template wideImpl*[T; size: static int](t: typedesc[array[size, T]]): untyped =
+  type E = wide(typeof(T)) # Using the type expression directly causes 'type expected' 
+  array[size, E]
 template scalarTypeImpl*[size; T](t: type array[size, T]): untyped = array[size, T.scalarType]
 template laneCountImpl*[size; T](t: type array[size, T]): int = T.laneCount
 
@@ -286,66 +272,22 @@ func select*[T; width: static int](condition: Wide[bool, width]; a, b: SomeWide[
     r.setLane(i, value) # TODO: Why does this not work directly on result?
   return r
 
-func replaceSymbols(node: NimNode; context: var WideBuilderContext): NimNode =
-  if node.kind == nnkSym:
-    for sym in context.symbolMap:
-      if node == sym[0]:
-        return sym[1]
-  else:
-    for i in 0 ..< node.len:
-      node[i] = node[i].replaceSymbols(context)
-
-  return node
-
-proc copyFieldDef(node: NimNode): tuple[root, ident: NimNode] =
-  node.expectKind({nnkIdent, nnkSym, nnkPragmaExpr, nnkPostfix})
+proc replaceSyms(node: NimNode): NimNode =
   case node.kind:
-    of nnkIdent:
-      return (node, node)
-    of nnkSym:
-      let ident = ident($node)
-      return (ident, ident)
-    of nnkPostfix:
-      result.root = node.copy()
-      let (root, ident) = result.root[1].copyFieldDef()
-      result.root[1] = root
-      result.ident = ident
-    of nnkPragmaExpr:
-      result.root = node.copy()
-      let (root, ident) = result.root[0].copyFieldDef()
-      result.root[0] = root
-      result.ident = ident
-    else: discard
+    of nnkSym, nnkOpenSymChoice, nnkClosedSymChoice:
+      return ident($node)
+    else:
+      result = node.copy()
+      for i in 0 ..< node.len:
+        result[i] = result[i].replaceSyms()
 
 proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): VectorizedType {.compileTime.} =
   
-  var
-    scalarTypeName: NimNode
-    scalarImpl: NimNode
-    wideGenericParams = newEmptyNode()
+  var wideGenericParams = newEmptyNode()
 
-  # For a typedef, we refer to the scalarType with it's symbol. We also take it's implementation from the typedef.
-  # This is the case for generic type instantiations.
-  if T.kind == nnkTypeDef:
-    scalarTypeName = T[0]
-    scalarImpl = T[2]
-
-    if T[1].kind != nnkEmpty:
-      wideGenericParams = nnkGenericParams.newTree()
-      for scalarParam in T[1]:
-        scalarParam.expectKind(nnkSym) # TODO: Why is this not nnkIdentDefs?
-        let t = quote do:
-          type(`scalarParam`)
-        let wideParam = genSym(nskGenericParam, scalarParam.repr)
-        wideGenericParams.add(nnkIdentDefs.newTree(wideParam, t, newEmptyNode()))
-        context.symbolMap.add((scalarParam, wideParam))
-
-  # Otherwise, T might be a symbol or another simple type expression. We refer to it using this expression.
-  # We get a nnkObjectType/etc. with getTypeImpl()
-  else:
+  let
     scalarTypeName = T
     scalarImpl = T.getTypeImpl()
-    #wideGenericParams = newEmptyNode()
   
   # TODO: Handle refs, base types, etc.
   scalarImpl.expectKind({ nnkObjectTy, nnkTupleTy })
@@ -373,7 +315,9 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
 
       # Create a copy of each field declaration
       let fieldDef = fieldDefs[i]
-      let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
+      #let (newFieldDef, fieldIdent) = fieldDef.copyFieldDef()
+      let newFieldDef = fieldDef.replaceSyms()
+      let fieldIdent = ident($newFieldDef)
 
       # TODO: Match the original postfix
       newFieldDefs.add(nnkPostfix.newTree(ident"*", newFieldDef))
@@ -427,18 +371,22 @@ proc makeWideComplexType(context: var WideBuilderContext; T: NimNode): Vectorize
 proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): VectorizedType {.compileTime.} =
 
   for vectorizedType in vectorizedTypes:
-    if T.sameType(vectorizedType.scalarType) and
+    # TODO: Check: We don't ever register typedescs, but nodes sometimes change typekind! For now we strip it again...
+    var knownType = vectorizedType.scalarType
+    if knownType.typekind == ntyTypeDesc:
+      knownType = knownType.gettypeInst()[1]
+
+    if T.sameType(knownType) and
       vectorizedType.width == 4:
       #echo "Reused type: " & (repr vectorizedType.scalarType) & " --> " & (repr vectorizedType.wideType)
       return vectorizedType
 
   case T.typeKind:
     of ntyGenericInvocation:
-      # Generic invocations are bracket expressions. We vectorize the generic type and return a matching invocation of it.
-      # We pass the full nnkTypeDef, so we can replace the generic params.
-      return context.makeWideComplexType(T[0].getTypeImpl())
-      
-    of ntyGenericInst, ntyObject, ntyTuple:
+      # We need a concrete type for vectorization. Otherwise the vector-width can't be inferred.
+      error("'wide' only supports concrete types.", T)
+
+    of ntyGenericInst, ntyObject, ntyTuple: # ntyGenericBody
       # T should be a symbol, bracket expr, etc. Expanding it with getTypeImpl will yield a nnkObjectTy, etc.
       return context.makeWideComplexType(T)
 
@@ -447,34 +395,16 @@ proc makeWideTypeRecursive(context: var WideBuilderContext; T: NimNode): Vectori
     else:
       error("Don't know how to vectorize type: " & T.repr, T)
 
-proc generateWideType(T: NimNode): VectorizedTypeInfo =
+proc generateWideType(T: NimNode): NimNode =
   ## Create a vectorized version of a type, used to convert code to structure-of-array form.
   
-  let typeDesc = T.getTypeInst()
   var context: WideBuilderContext
+  let rootType = context.makeWideTypeRecursive(T[1])
 
-  # Check the ancestor of the typedesc. If we are inside some proc we can't export any
-  # generated symbols.
-  var owner: NimNode
-  if T.typeKind == ntyTypeDesc:
-    owner = T[0].owner
-  else:
-    owner = newEmptyNode()
-
-  while owner.kind == nnkSym:
-    #echo astgenrepr owner, owner.symKind
-    if owner.symKind in { nskProc, nskFunc, nskMethod, nskIterator, nskConverter }:
-      context.isLocal = true
-      break
-    owner = owner.owner
-  
-  let rootType = context.makeWideTypeRecursive(typeDesc[1])
-
-  result.definition = newStmtList(nnkTypeSection.newTree(context.generatedTypes))
-  result.definition.add(context.generatedProcs)
-  result.symbol = rootType.wideType
-  result.setLane = rootType.setLane
-  result.getLane = rootType.getLane
+  result = newStmtList(
+    newStmtList(nnkTypeSection.newTree(context.generatedTypes)),
+    newStmtList(context.generatedProcs),
+    rootType.wideType)
 
 when isMainModule:
   # Test super scalar concept

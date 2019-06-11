@@ -55,7 +55,7 @@ type
   SymmetricMatrix2x2* = SymmetricMatrix[float32, 2]
   SymmetricMatrix3x3* = SymmetricMatrix[float32, 3] 
 
-# Custom vectorization. Vector-like types simply have their members serialized.
+# Custom vectorization. Vector-like types simply have their members vectorized.
 template isVectorizable*(_: type Vector): bool = true
 template wideImpl*[T; size: static int](_: type Vector[T, size]): typedesc = Vector[wide(typeof(T)), size]
 template scalarTypeImpl*[T; size: static int](t: type Vector[T, size]): typedesc = Vector[T.scalarType, size]
@@ -89,8 +89,8 @@ func setLaneImpl*[T; S](self: var QuaternionBase[T]; laneIndex: int; value: Quat
     self.elements[i].setLane(laneIndex, value.elements[i])
 
 template isVectorizable*(_: type Matrix): bool = true
-template wideImpl*[T; width, height: static int](_: type Matrix[T, width, height]): typedesc = Matrix[wide(typeof(T)), width, height]
-template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, width, height]
+template wideImpl*[T; height, width: static int](_: type Matrix[T, height, width]): typedesc = Matrix[wide(typeof(T)), height, width]
+template scalarTypeImpl*[T; height, width: static int](t: type Matrix[T, height, width]): typedesc = Matrix[T.scalarType, height, width]
 template laneCountImpl*[T; height, width: static int](t: type Matrix[T, height, width]): int = T.laneCount
 
 func getLaneImpl*[height, width; T](self: Matrix[T, height, width]; laneIndex: int): auto {.inline.} =
@@ -123,12 +123,14 @@ func setLaneImpl*[size; T; S](self: var SymmetricMatrix[T, size]; laneIndex: int
 # Vectors inherit universal pointwise ops
 template isVector*(_: type Vector): bool = true
 template len*[T; size: static int](_: type Vector[T, size]): int = size
+template len*[T; height, width: static int](_: type Matrix[T, height, width]): int = height * width
+template len*[T; size: static int](_: type SymmetricMatrix[T, size]): int = size * (size + 1) div 2
 
 # Vector, quaternion and matrix subscript
-func `[]`*[V: Vector | QuaternionBase | Matrix](self: V; index: int): V.T =
+func `[]`*[V: Vector | QuaternionBase | Matrix | SymmetricMatrix](self: V; index: int): V.T =
   self.elements[index]
 
-func `[]=`*[V: Vector | QuaternionBase | Matrix](self: var V; index: int; value: V.T) =
+func `[]=`*[V: Vector | QuaternionBase | Matrix | SymmetricMatrix](self: var V; index: int; value: V.T) =
   self.elements[index] = value
 
 # Matrix subscript
@@ -138,6 +140,13 @@ func `[]`*(self: Matrix; row, column: int): Matrix.T =
 func `[]=`*(self: var Matrix; row, column: int; value: Matrix.T) =
   self.elements[row * Matrix.width + column] = value
 
+func `[]`*[T; size: static int](self: SymmetricMatrix[T, size]; row, column: int): T {.inline.} =
+  if column > row:
+    return self[column, row]
+  else:
+    let offset = row * (row + 1) div 2
+    return self.elements[offset + column]
+
 # Common wide types
 type
   Vector2Wide* = wide Vector2
@@ -146,11 +155,31 @@ type
 
   QuaternionWide* = wide Quaternion
 
+  Matrix2x2Wide* = wide Matrix2x2
+  Matrix3x2Wide* = wide Matrix3x2
+  Matrix3x3Wide* = wide Matrix3x3
   Matrix4x4Wide* = wide Matrix4x4
+
+  SymmetricMatrix2x2Wide* = wide SymmetricMatrix2x2
+  SymmetricMatrix3x3Wide* = wide SymmetricMatrix3x3
 
 # These cannot be defined using the concept, since they would conflict with the generic version in the system module
 makeUniversalBinary(Vector, min)
 makeUniversalBinary(Vector, max)
+
+makeUniversal(Matrix, `-`)
+makeUniversalBinary(Matrix, `+`)
+makeUniversalBinary(Matrix, `-`)
+
+makeUniversal(SymmetricMatrix, `-`)
+makeUniversalBinary(SymmetricMatrix, `+`)
+makeUniversalBinary(SymmetricMatrix, `-`)
+
+template `+=` *(left: var Matrix; right: Matrix) = left = left + right
+template `-=` *(left: var Matrix; right: Matrix) = left = left - right
+
+template `+=` *(left: var SymmetricMatrix; right: SymmetricMatrix) = left = left + right
+template `-=` *(left: var SymmetricMatrix; right: SymmetricMatrix) = left = left - right
 
 # converter toVector[T; size: static int](value: T): Vector[T, size] =
 #   for i in 0..<size:
@@ -259,7 +288,7 @@ func getMatrixSwizzles(swizzle: string): seq[(int, int)] {.compileTime.} =
     assert(swizzle[i] == 'm' and swizzle[i + 1].isDigit and swizzle[i + 2].isDigit, "'" & swizzle & "' is not a valid matrix swizzling pattern")
     result.add((parseInt($swizzle[i + 1]), parseInt($swizzle[i + 2])))
 
-macro `.`*(self: Matrix; swizzle: untyped): untyped =
+macro `.`*(self: Matrix | SymmetricMatrix; swizzle: untyped): untyped =
   var
     indices = getMatrixSwizzles($swizzle)
     cardinality = indices.len
@@ -286,7 +315,7 @@ macro `.`*(self: Matrix; swizzle: untyped): untyped =
       toVector[`temp`.T, `cardinality`](`values`)
 
 # Assumes `[]` and `[]=` operators on matrices
-macro `.=`*(self: var Matrix; swizzle: untyped; value: untyped): untyped =
+macro `.=`*(self: var Matrix | SymmetricMatrix; swizzle: untyped; value: untyped): untyped =
   var
     indices = getMatrixSwizzles($swizzle)
     cardinality = indices.len
@@ -443,9 +472,6 @@ func catmullRom*[T; width: static int](value1, value2, value3, value4: Vector[T,
 func barycentric*[T; width: static int](value1, value2, value3: Vector[T, width]; amount1, amount2: T): Vector[T, width] =
   (value1 + (amount1 * (value2 - value1))) + (amount2 * (value3 - value1))
 
-func changeBasis*(self, basis: Matrix): Matrix =
-  basis.transpose() * self * basis
-
 func transformNormal*[T](normal: Vector[T, 3]; transform: Matrix[T, 4, 4]): Vector[T, 3] =
   (transform.m00m01m02 * normal.x) + (transform.m10m11m12 * normal.y) + (transform.m20m21m22 * normal.z)
 
@@ -453,7 +479,7 @@ func transformCoordinate*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 4, 4
   let invW = 1.0 / ((coordinate.x * transform.m03) + (coordinate.x * transform.m13) + (coordinate.z * transform.m23) + transform.m33)
   return (transform.transformNormal(coordinate) + transform.m41m42m43) * invW
 
-func transform*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 3, 3]): Vector[T, 3] =
+func transform*[T](coordinate: Vector[T, 3]; transform: Matrix[T, 3, 3] | SymmetricMatrix[T, 3]): Vector[T, 3] =
   (transform.m00m01m02 * coordinate.x) + (transform.m10m11m12 * coordinate.y) + (transform.m20m21m22 * coordinate.z)
 
 func transform*[T](vector: Vector[T, 3]; rotation: QuaternionBase[T]): Vector[T, 3] =
@@ -507,18 +533,56 @@ func `*` *[T; height, width, count: static int](
   right: Matrix[T, count, width]):
   Matrix[T, height, width] =
 
-  restrict(left)
-  restrict(right)
-
   for r in 0..<height:
     for c in 0..<width:
       for i in 0..<count:
-        result[r, c] = result[r, c] + left[][r, i] * right[][i, c]
+        result[r, c] = result[r, c] + left[r, i] * right[i, c]
 
-func transpose*(self: Matrix): Matrix =
-  for r in 0 ..< self.height:
-    for c in 0 ..< self.width:
+func `*` *[T; height, width: static int](left: Matrix[T, height, width]; right: T): Matrix[T, height, width] =
+  for i in 0 ..< left.elements.len:
+    result[i] = left[i] * right
+
+func `*` *[T; size: static int](left: SymmetricMatrix[T, size]; right: T): SymmetricMatrix[T, size] =
+  for i in 0 ..< left.elements.len:
+    result.elements[i] = left.elements[i] * right
+
+func transpose*[T; height, width: static int](self: Matrix[T, height, width]): Matrix[T, width, height] =
+  for r in 0 ..< height:
+    for c in 0 ..< width:
       result[r, c] = self[c, r]
+
+func changeBasis*[T; innerSize, outerSize: static int](
+  self: Matrix[T, innerSize, innerSize];
+  basis: Matrix[T, innerSize, outerSize]): Matrix[T, outerSize, outerSize] =
+
+  basis.transpose() * self * basis
+
+func changeBasis*[T; innerSize, outerSize: static int](
+  self: SymmetricMatrix[T, innerSize];
+  basis: Matrix[T, innerSize, outerSize]): SymmetricMatrix[T, outerSize] =
+
+  var k = 0
+  for r in 0 ..< outerSize:
+    for c in 0 .. r:
+      for i in 0 ..< innerSize:
+        for j in 0 ..< innerSize:
+          result.elements[k] += basis[i, r] * basis[j, c] * self[i, j]
+      inc k
+
+func changeBasis*[T; size: static int](
+  self: Matrix[T, size, size] | SymmetricMatrix[T, size];
+  v: Vector[T, size]): T =
+
+  dot(v.transform(self), v)
+
+func dot*[T; height, width: static int](self: Matrix[T, height, width]): SymmetricMatrix[T, width] =
+  # TODO: Better name
+  var k = 0
+  for r in 0 ..< width:
+    for c in 0 .. r:
+      for i in 0 ..< height:
+        result.elements[k] += self[i, r] * self[i, c]
+      inc k
 
 func translation*[T](value: Vector[T, 3]): Matrix[T, 4, 4] =
   result = Matrix[T, 4, 4].identity
@@ -664,7 +728,7 @@ func orthographic*[T](width, height, near, far: T): Matrix[T, 4, 4] =
     halfWidth = (T)0.5 * width
     halfHeight = (T)0.5 * height
 
-  return orthographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far: T)
+  return orthographicOffCenter(-halfWidth, halfWidth, -halfHeight, halfHeight, near, far)
 
 func lookAt*[T](eye, target, up: Vector[T, 3]): Matrix[T, 4, 4] =
 
@@ -871,3 +935,21 @@ func contains*(box: BoundingBox; point: Vector3): bool =
 
 func intersects*(a, b: BoundingBox): bool =
   all(a.maximum >= b.minimum) and all(b.maximum >= a.minimum)
+
+proc projectionFrustum*(matrix: Matrix4x4): BoundingFrustum =
+  # See: http://www8.cs.umu.se/kurser/5DV051/HT12/lab/plane_extraction.pdf
+  let c3 = matrix.m03m13m23m33
+ 
+  for face, plane in result.planes.mpairs:
+    var coefficients: Vector4
+
+    case face:
+      of Left: coefficients = c3 + matrix.m00m10m20m30
+      of Right: coefficients = c3 - matrix.m00m10m20m30
+      of Bottom: coefficients = c3 + matrix.m01m11m21m31
+      of Top: coefficients = c3 - matrix.m01m11m21m31
+      of Near: coefficients = matrix.m02m12m22m32
+      of Far: coefficients = c3 - matrix.m02m12m22m32
+      
+    let length = coefficients.xyz.length()
+    plane = Plane(normal: coefficients.xyz / length, distance: coefficients.w / length)
