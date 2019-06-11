@@ -15,11 +15,10 @@ func isPowerOfTwo*(value: SomeInteger): bool =
 
 func nextPowerOfTwo*(value: SomeUnsignedInt): SomeUnsignedInt =
   const bits = sizeof(value) * 8
-  return 1 shl (bits - countLeadingZeroBits(value - 1))
+  return (1 shl (bits - countLeadingZeroBits(value - 1))).SomeUnsignedInt
 
-func powerOfTwoBase*(value: SomeUnsignedInt): SomeUnsignedInt =
-  const bits = sizeof(value) * 8
-  return if value != 0: bits - countTrailingZeroBits(value) else: 0
+func powerOfTwoBase*(value: SomeUnsignedInt): int =
+  return if value != 0: countTrailingZeroBits(value) else: 0
 
 func saturate*(value: SomeFloat): SomeFloat =
   clamp(value, (SomeFloat)0, (SomeFloat)1)
