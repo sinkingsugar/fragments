@@ -55,7 +55,7 @@ type
   SymmetricMatrix2x2* = SymmetricMatrix[float32, 2]
   SymmetricMatrix3x3* = SymmetricMatrix[float32, 3] 
 
-# Custom vectorization. Vector-like types simply have their members serialized.
+# Custom vectorization. Vector-like types simply have their members vectorized.
 template isVectorizable*(_: type Vector): bool = true
 template wideImpl*[T; size: static int](_: type Vector[T, size]): typedesc = Vector[wide(typeof(T)), size]
 template scalarTypeImpl*[T; size: static int](t: type Vector[T, size]): typedesc = Vector[T.scalarType, size]
