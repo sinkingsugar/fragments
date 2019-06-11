@@ -129,7 +129,8 @@ type
 
   Coroutine {.pure.} = object
     execContext: Context
-    fn: proc()
+    customData: pointer
+    fn: proc(data: pointer) {.cdecl.}
     state: int
     lastRun: Ticks
     sleepTime*: float
@@ -200,7 +201,7 @@ proc runCurrentTask() =
     # Activate current stack because we are executing in a new coroutine.
     current.state = CORO_EXECUTING
     try:
-      current.fn()                    # Start coroutine execution
+      current.fn(current.customData)                    # Start coroutine execution
     except:
       echo "Unhandled exception in coroutine."
       writeStackTrace()
@@ -208,7 +209,7 @@ proc runCurrentTask() =
   suspend(0)
   doAssert false
 
-proc start*(c: proc(), stacksize: int=defaultStackSize): CoroutinePtr =
+proc start*(c: proc(data: pointer) {.cdecl.}, data: pointer = nil, stacksize: int = defaultStackSize): CoroutinePtr =
   ## Schedule coroutine for execution. It does not run immediately.
   var coro: CoroutinePtr
   when coroBackend == CORO_BACKEND_FIBERS:
@@ -225,6 +226,7 @@ proc start*(c: proc(), stacksize: int=defaultStackSize): CoroutinePtr =
       coro.execContext.uc_link = addr(ctx.loop.execContext)
       makecontext(coro.execContext, runCurrentTask, 0)
   coro.fn = c
+  coro.customData = data
   coro.stack.size = stacksize
   coro.state = CORO_CREATED
   return coro
@@ -252,7 +254,7 @@ when isMainModule:
 
   var
     running = true
-    c1 = start(proc() =
+    c1 = start(proc(data: pointer) {.cdecl.} =
       while running:
         echo "Hello"
         suspend(1)
