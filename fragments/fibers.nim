@@ -205,6 +205,7 @@ proc runCurrentTask() =
     except:
       echo "Unhandled exception in coroutine."
       writeStackTrace()
+      echo "Exception: " & getCurrentExceptionMsg()
     current.state = CORO_FINISHED
   suspend(0)
   doAssert false
