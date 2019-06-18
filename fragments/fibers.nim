@@ -139,7 +139,7 @@ type
   CoroutinePtr* = ptr Coroutine
 
 var currentCoro {.threadvar.}: CoroutinePtr
-var mainCoro: Coroutine
+var mainCoro {.threadvar.}: Coroutine
 
 proc init*() =
   mainCoro.state = CORO_EXECUTING
