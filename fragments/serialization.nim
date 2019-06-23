@@ -50,8 +50,24 @@ proc isBlittable*(t: NimNode): bool {.compileTime.} =
 
       let fieldDefs = if t.typeKind == ntyObject: typeDef[2] else: typeDef # Tuples have no recList
       for field in fieldDefs:
-        if not field[^2].isBlittable:
-          return false
+        if field.kind == nnkRecCase:
+          # Discriminator
+          field[0].expectKind(nnkIdentDefs)
+          if not field[0][^2].isBlittable:
+            return false
+
+          # Branch fields
+          for branch in field[1..^1]:
+            let branchFields = if branch.kind == nnkElse: branch[0] else: branch[1]
+            for branchField in branchFields:
+              field[0].expectKind(nnkIdentDefs)
+              if not branchField[^2].isBlittable:
+                return false
+        else:
+          # Non-branch fields
+          field.expectKind(nnkIdentDefs)
+          if not field[^2].isBlittable:
+            return false
 
       return true
     else: return true
@@ -102,6 +118,27 @@ proc newSerializationContext*(stream: Stream): owned SerializationContext =
 
 var serializableTypes {.compileTime.}: seq[tuple[serializable, serialize, deserialize: NimNode]]
 
+proc generateFieldSerializers(fieldDef, value, context, serializers, deserializers: NimNode) =
+  fieldDef.expectKind(nnkIdentDefs)
+  for i in 0 ..< fieldDef.len - 2:
+    var shouldSerialize = true
+    var fieldIdent = fieldDef[i]
+
+    if fieldIdent.kind == nnkPragmaExpr:
+      for pragma in fieldIdent[1]:
+        if pragma.kind == nnkExprColonExpr and pragma[0].strVal == "serializable" and pragma[1].strVal == "false":
+          shouldSerialize = false
+      fieldIdent = fieldIdent[0]
+
+    if shouldSerialize:
+      # Get the field identifier without postfix/pragmas.
+      # In anonymous typles, this is already a symbol.
+      if fieldIdent.kind != nnkSym:
+        fieldIdent = fieldIdent.basename
+
+      serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
+      deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
+
 proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deserialize: NimNode] {.compileTime.} =
   let typeInst = t.getTypeInst()
 
@@ -150,24 +187,43 @@ proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deseri
   # Serialize fields
   # TODO: Handle visibility and make configurable per field
   for fieldDef in fieldDefs:
-    for i in 0 ..< fieldDef.len - 2:
-      var shouldSerialize = true
-      var fieldIdent = fieldDef[i]
 
-      if fieldIdent.kind == nnkPragmaExpr:
-        for pragma in fieldIdent[1]:
-          if pragma.kind == nnkExprColonExpr and pragma[0].strVal == "serializable" and pragma[1].strVal == "false":
-            shouldSerialize = false
-        fieldIdent = fieldIdent[0]
+    echo fieldDef.kind
+    if fieldDef.kind == nnkRecCase:
+      discard
+      # Discriminator
+      generateFieldSerializers(fieldDef[0], value, context, serializers, deserializers)
 
-      if shouldSerialize:
-        # Get the field identifier without postfix/pragmas.
-        # In anonymous typles, this is already a symbol.
-        if fieldIdent.kind != nnkSym:
-          fieldIdent = fieldIdent.basename
+      # Branch fields
+      # Create a case statement for both serialization and deserialization
+      let
+        caseSerializer = nnkCaseStmt.newTree(newDotExpr(value, fieldDef[0][0]))
+        caseDeserializer = caseSerializer.copy()
 
-        serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
-        deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
+      for branch in fieldDef[1..^1]:
+        let branchSerializer = branch.kind.newTree()
+        var branchFields = branch[0] # nnkElse only contains a nnkRecList
+
+        if branch.kind == nnkOfBranch:
+          branchSerializer.add(branch[0])
+          branchFields = branch[1]          
+
+        let branchDeserializer = branchSerializer.copy()
+
+        for branchField in branchFields:
+          generateFieldSerializers(branchField, value, context, branchSerializer, branchDeserializer)
+
+        caseSerializer.add(branchSerializer)
+        caseDeserializer.add(branchDeserializer)
+
+      serializers.add(caseSerializer)
+      deserializers.add(caseDeserializer)
+
+      echo repr caseSerializer
+
+    else:
+      # Non-branch fields
+      generateFieldSerializers(fieldDef, value, context, serializers, deserializers)
 
   let
     serializeSym = genSym(nskProc)
@@ -359,6 +415,13 @@ when isMainModule:
     Ptr = ptr int
     Seq = seq[int]
 
+    CaseObj = object
+      case d: bool:
+      of true:
+        a: ref int
+      else:
+        b: int
+
   assert float is Serializable
   assert string is Serializable
   assert Ref is Serializable
@@ -373,6 +436,7 @@ when isMainModule:
   assert Ref isnot Blittable
   assert Ptr isnot Blittable
   assert Seq isnot Blittable
+  assert CaseObj isnot Blittable
 
   type
     A = object of RootObj
@@ -421,6 +485,7 @@ when isMainModule:
       p2*: (ref float)
       t1*: Test3
       t2*: tuple[a: int]
+      c1*: CaseObj
       # t3*: tuple[a: owned (ref float)]
 
   assert Test is Serializable
