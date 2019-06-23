@@ -24,6 +24,11 @@ import os
 import lists
 include system/timers
 
+when defined nimCoroutines:
+  proc GC_addStack(bottom: pointer) {.cdecl, importc.}
+  proc GC_removeStack(bottom: pointer) {.cdecl, importc.}
+  proc GC_setActiveStack(bottom: pointer) {.cdecl, importc.}
+
 const defaultStackSize = 512 * 1024
 
 const
@@ -155,6 +160,8 @@ proc switchTo*(current, to: CoroutinePtr) =
   ## Switches execution from `current` into `to` context.
   to.lastRun = getTicks()
   # Update position of current stack so gc invoked from another stack knows how much to scan.
+  when defined nimCoroutines:
+    GC_setActiveStack(current.stack.bottom)
   var frame = getFrameState()
   block:
     # Execution will switch to another fiber now. We do not need to update current stack
@@ -179,6 +186,8 @@ proc switchTo*(current, to: CoroutinePtr) =
       {.error: "Invalid coroutine backend set.".}
   # Execution was just resumed. Restore frame information and set active stack.
   setFrameState(frame)
+  when defined nimCoroutines:
+    GC_setActiveStack(current.stack.bottom)
 
 proc suspend*(sleepTime: float=0) =
   ## Stops coroutine execution and resumes no sooner than after ``sleeptime`` seconds.
@@ -198,7 +207,11 @@ proc runCurrentTask() =
     # have to set active stack here as well. GC_removeStack() has to be called in main loop
     # because we still need stack available in final suspend(0) call from which we will not
     # return.
+    when defined nimCoroutines:
+      GC_addStack(sp)
     # Activate current stack because we are executing in a new coroutine.
+    when defined nimCoroutines:
+      GC_setActiveStack(sp)
     current.state = CORO_EXECUTING
     try:
       current.fn(current.customData)                    # Start coroutine execution
@@ -233,6 +246,8 @@ proc start*(c: proc(data: pointer) {.cdecl.}, data: pointer = nil, stacksize: in
   return coro
 
 proc cleanup*(c: CoroutinePtr) =
+  when defined nimCoroutines:
+    GC_removeStack(c.stack.bottom)
   when coroBackend == CORO_BACKEND_FIBERS:
     DeleteFiber(c.execContext)
   else:
