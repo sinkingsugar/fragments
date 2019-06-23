@@ -37,7 +37,7 @@ func zigZagEncode*(value: BiggestInt): BiggestUInt =
   return ((value shl 1) xor ashr(value, bits)).BiggestUInt
 
 func zigZagDecode*(value: BiggestUInt): BiggestInt =
-  return (value.BiggestInt shr 1) xor -(value.BiggestInt and 1)
+  return (value shr 1).BiggestInt xor -(value.BiggestInt and 1)
 
 func gaussian*(value, mean, standardDeviation: SomeFloat): SomeFloat =
   const normalizationFactor = 1.0 / sqrt(2.0 * PI)
