@@ -85,6 +85,7 @@ makeUniversalBinary(SomeVector, `+`)
 makeUniversalBinary(SomeVector, `-`)
 makeUniversalBinary(SomeVector, `*`)
 makeUniversalBinary(SomeVector, `/`)
+makeUniversalBinary(SomeVector, `div`)
 
 makeUniversal(SomeVector, `not`)
 makeUniversalBinary(SomeVector, `and`)
