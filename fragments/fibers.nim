@@ -28,6 +28,9 @@ when defined nimCoroutines:
   proc GC_addStack(bottom: pointer) {.cdecl, importc.}
   proc GC_removeStack(bottom: pointer) {.cdecl, importc.}
   proc GC_setActiveStack(bottom: pointer) {.cdecl, importc.}
+else:
+  static:
+    echo "No -d:nimCoroutines detected, use fragments/fibers carefully as there will be no GC support."
 
 const defaultStackSize = 512 * 1024
 
