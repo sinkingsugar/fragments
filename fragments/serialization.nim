@@ -94,6 +94,8 @@ proc toFourCC*(str: string): FourCC {.compileTime.} =
   doAssert(str.len == 4, "To make a FourCC from a string the string needs to be exactly 4 chars long")
   return toFourCC(str[0], str[1], str[2], str[3])
 
+proc `==`*(x, y: FourCC): bool {.borrow.}
+
 proc newSerializationContext*(stream: Stream): owned SerializationContext =
   new(result)
   result.stream = stream
