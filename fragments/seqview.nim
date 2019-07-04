@@ -29,6 +29,16 @@ proc `[]=`*[T](v: SeqView[T]; index: int; value: T) {.inline.} =
     valPtr = cast[ptr T](begin)
   valPtr[] = value
 
+iterator items*[T](s: SeqView[T]): T {.inline.} =
+  for i in 0..s.high:
+    let item = s[i]
+    yield item
+
+iterator mitems*[T](s: var SeqView[T]): var T {.inline.} =
+  for i in 0..s.high:
+    var item = s[i]
+    yield item
+
 when isMainModule:
   var s = @[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   var v = s.view(2..5)
