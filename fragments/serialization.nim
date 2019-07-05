@@ -495,7 +495,7 @@ when isMainModule:
       t1*: Test3
       t2*: tuple[a: int]
       c1*: CaseObj
-      # t3*: tuple[a: owned (ref float)]
+      #t3*: tuple[a: owned (ref float)]
 
   assert Test is Serializable
 
@@ -521,5 +521,5 @@ when isMainModule:
 
   assert $r1[] == $r2[]
   assert $r1.p[] == $r2.p[]
-  #assert r2.p == r2.p2
+  assert r2.p == r2.p2
 
