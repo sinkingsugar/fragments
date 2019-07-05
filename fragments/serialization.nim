@@ -118,7 +118,7 @@ proc newSerializationContext*(stream: Stream): owned SerializationContext =
 
 var serializableTypes {.compileTime.}: seq[tuple[serializable, serialize, deserialize: NimNode]]
 
-proc generateFieldSerializers(fieldDef, value, context, serializers, deserializers: NimNode) =
+proc generateFieldSerializers(fieldDef, value, context, serializers, deserializers: NimNode; isDiscriminator: bool = false) =
   fieldDef.expectKind(nnkIdentDefs)
   for i in 0 ..< fieldDef.len - 2:
     var shouldSerialize = true
@@ -137,7 +137,16 @@ proc generateFieldSerializers(fieldDef, value, context, serializers, deserialize
         fieldIdent = fieldIdent.basename
 
       serializers.add quote do: `value`.`fieldIdent`.serialize(`context`)
-      deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
+
+      if not isDiscriminator:
+        deserializers.add quote do: `value`.`fieldIdent`.deserialize(`context`)
+
+      # Object variant discriminators need to be assigned by recreating the whole object
+      else:
+        deserializers.add quote do:
+          var discriminator: typeof(`value`.`fieldIdent`)
+          discriminator.deserialize(`context`)
+          `value` = typeof(`value`)(`fieldIdent`: discriminator)
 
 proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deserialize: NimNode] {.compileTime.} =
   let typeInst = t.getTypeInst()
@@ -186,13 +195,13 @@ proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deseri
 
   # Serialize fields
   # TODO: Handle visibility and make configurable per field
-  for fieldDef in fieldDefs:
+  for i, fieldDef in fieldDefs:
 
     echo fieldDef.kind
     if fieldDef.kind == nnkRecCase:
-      discard
       # Discriminator
-      generateFieldSerializers(fieldDef[0], value, context, serializers, deserializers)
+      assert i == 0 # TODO: Allow other fields first, but move serialization of this one to the front
+      generateFieldSerializers(fieldDef[0], value, context, serializers, deserializers, true)
 
       # Branch fields
       # Create a case statement for both serialization and deserialization
@@ -218,8 +227,6 @@ proc generateObjectSerializer*(t: NimNode): tuple[declaration, serialize, deseri
 
       serializers.add(caseSerializer)
       deserializers.add(caseDeserializer)
-
-      echo repr caseSerializer
 
     else:
       # Non-branch fields
@@ -418,9 +425,9 @@ when isMainModule:
     CaseObj = object
       case d: bool:
       of true:
-        a: ref int
+        a: int
       else:
-        b: int
+        b: ref int
 
   assert float is Serializable
   assert string is Serializable
@@ -491,7 +498,7 @@ when isMainModule:
   assert Test is Serializable
 
   var
-    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,))#, t3: (new float,))
+    r1 = Test(a1: 1.0, a2: 2.0, b: @[1, 2, 3], s: "Hello", p: new float, t1: (4,), t2: (5,), c1: CaseObj(d: true, a: 42))#, t3: (new float,))
     r2: owned Test
   r1.p[] = 3.0
   r1.p2 = r1.p
